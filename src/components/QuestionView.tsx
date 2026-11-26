@@ -1,14 +1,21 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
-import type { Stat } from '../lib/stats.ts';
+import type { OptionRow, Stat } from '../lib/stats.ts';
+import { sampleNote, withCI, withPctCI } from '../lib/stats.ts';
 import { horizontalBars, verticalBars } from '../lib/charts.ts';
-import { formatDateTime, formatNumber, formatPct } from '../lib/text.ts';
+import { ciDigits, formatCI, formatDateTime, formatNumber, formatPct, formatPctCI } from '../lib/text.ts';
 import { QUESTION_TYPES, TYPE_LABELS } from '../types.ts';
 import type { AIResult, Question, QuestionType } from '../types.ts';
 import { Chart } from './Chart.tsx';
 
 const smartNumber = (x: number | null) => (x === null ? '—' : Number.isInteger(x) ? String(x) : x.toFixed(2));
+const pctCI = (o: OptionRow) => withPctCI(formatPct(o.pct), o.ci);
+
+export function CIRange({ ci, digits = 1, pct = false }: { ci: { lower: number; upper: number } | null; digits?: number; pct?: boolean }) {
+  if (!ci) return null;
+  return <span className="ci">95% 区间 {pct ? formatPctCI(ci) : formatCI(ci, digits)}</span>;
+}
 
 function ChartFor({ stat }: { stat: Stat }) {
   const built = useMemo(() => {
@@ -24,14 +31,19 @@ function ChartFor({ stat }: { stat: Stat }) {
 function chips(stat: Stat): [string, string][] {
   switch (stat.kind) {
     case 'single':
-      return stat.options[0] ? [['最多选择', `${stat.options[0].name} ${formatPct(stat.options[0].pct)}`], ['选项数', String(stat.options.length)]] : [];
+      return stat.options[0]
+        ? [['最多选择', `${stat.options[0].name} ${formatPct(stat.options[0].pct)}`], ['95% 区间', formatPctCI(stat.options[0].ci)], ['选项数', String(stat.options.length)]]
+        : [];
     case 'multi':
-      return stat.options.length ? [['平均选择', `${formatNumber(stat.avgSelected)} 项`], ['选项数', String(stat.options.length)]] : [];
+      return stat.options.length
+        ? [['平均选择', `${formatNumber(stat.avgSelected)} 项`], ['选项数', String(stat.options.length)]]
+        : [];
     case 'scale':
       return stat.mean === null
         ? [['档位数', String(stat.levels.length)]]
         : [
             ['均值', formatNumber(stat.mean, 2)],
+            ['95% 区间', formatCI(stat.meanCI, 2)],
             ['中位数', formatNumber(stat.median, 2)],
             ['标准差', formatNumber(stat.sd, 2)],
             ...(stat.top2 !== null ? ([['Top-2 占比', formatPct(stat.top2)]] as [string, string][]) : []),
@@ -41,6 +53,7 @@ function chips(stat: Stat): [string, string][] {
         ? []
         : [
             ['均值', smartNumber(stat.mean)],
+            ['95% 区间', formatCI(stat.meanCI, ciDigits(stat.mean))],
             ['中位数', smartNumber(stat.median)],
             ['标准差', smartNumber(stat.sd)],
             ['范围', `${smartNumber(stat.min)} – ${smartNumber(stat.max)}`],
@@ -52,8 +65,35 @@ function chips(stat: Stat): [string, string][] {
 
 export function sentence(stat: Stat) {
   const head = `有效回答 ${stat.n} 条${stat.missing > 0 ? `（缺失 ${stat.missing}）` : ''}`;
-  const c = chips(stat).filter(([k]) => k !== '选项数' && k !== '档位数');
-  return c.length ? `${head}；${c.map(([k, v]) => `${k} ${v}`).join('，')}。` : `${head}。`;
+  const top = (o: OptionRow | undefined, verb: string) => (o ? [`${verb} ${o.name} ${pctCI(o)}`] : []);
+  const parts: string[] = [];
+  switch (stat.kind) {
+    case 'single':
+      parts.push(...top(stat.options[0], '最多选择'));
+      break;
+    case 'multi':
+      parts.push(...top(stat.options[0], '选择最多'));
+      if (stat.options.length) parts.push(`平均每人选 ${formatNumber(stat.avgSelected)} 项`);
+      break;
+    case 'scale':
+      if (stat.mean !== null) {
+        parts.push(withCI(`均值 ${formatNumber(stat.mean, 2)}`, stat.meanCI, 2), `中位数 ${formatNumber(stat.median, 2)}`, `标准差 ${formatNumber(stat.sd, 2)}`);
+        if (stat.top2 !== null) parts.push(withCI(`Top-2 占比 ${formatPct(stat.top2)}`, stat.top2CI, 1));
+      }
+      break;
+    case 'numeric':
+      if (stat.mean !== null) {
+        parts.push(
+          withCI(`均值 ${smartNumber(stat.mean)}`, stat.meanCI, ciDigits(stat.mean)),
+          withCI(`中位数 ${smartNumber(stat.median)}`, stat.medianCI, ciDigits(stat.median)),
+          `标准差 ${smartNumber(stat.sd)}`,
+          `范围 ${smartNumber(stat.min)} – ${smartNumber(stat.max)}`,
+        );
+      }
+      break;
+  }
+  const note = sampleNote(stat.n);
+  return `${head}${parts.length ? `；${parts.join('，')}` : ''}。${note ? `${note}。` : ''}`;
 }
 
 function DistributionTable({ stat }: { stat: Stat }) {
@@ -78,6 +118,7 @@ function DistributionTable({ stat }: { stat: Stat }) {
                   <span style={{ width: `${Math.min(100, r.pct * 100)}%` }} />
                 </span>
                 {formatPct(r.pct)}
+                <CIRange ci={r.ci} pct />
               </td>
             </tr>
           ))}
@@ -86,20 +127,23 @@ function DistributionTable({ stat }: { stat: Stat }) {
     );
   }
   if (stat.kind === 'numeric' && stat.mean !== null) {
-    const items: [string, string][] = [
-      ['均值', smartNumber(stat.mean)],
-      ['中位数', smartNumber(stat.median)],
-      ['标准差', smartNumber(stat.sd)],
-      ['最小值', smartNumber(stat.min)],
-      ['最大值', smartNumber(stat.max)],
+    const items: [string, string, { lower: number; upper: number } | null, number][] = [
+      ['均值', smartNumber(stat.mean), stat.meanCI, ciDigits(stat.mean)],
+      ['中位数', smartNumber(stat.median), stat.medianCI, ciDigits(stat.median)],
+      ['标准差', smartNumber(stat.sd), null, 1],
+      ['最小值', smartNumber(stat.min), null, 1],
+      ['最大值', smartNumber(stat.max), null, 1],
     ];
     return (
       <table className="dist">
         <tbody>
-          {items.map(([k, v]) => (
+          {items.map(([k, v, ci, digits]) => (
             <tr key={k}>
               <td>{k}</td>
-              <td>{v}</td>
+              <td>
+                {v}
+                <CIRange ci={ci} digits={digits} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -113,6 +157,7 @@ export function QuestionBody({ stat, bare }: { stat: Stat; bare?: boolean }) {
   if (stat.n === 0) return <p className="empty">这道题没有有效回答，无法统计。可以把它改成「元数据」或直接忽略。</p>;
   const table = <DistributionTable stat={stat} />;
   const chart = <ChartFor stat={stat} />;
+  const note = sampleNote(stat.n);
   return (
     <>
       {!bare && (
@@ -128,7 +173,10 @@ export function QuestionBody({ stat, bare }: { stat: Stat; bare?: boolean }) {
       {chart || table ? (
         <div className={`card-body${chart ? '' : ' no-chart'}`}>
           {chart}
-          {table}
+          <div>
+            {note && <p className="sample-note">{note}。</p>}
+            {table}
+          </div>
         </div>
       ) : null}
     </>

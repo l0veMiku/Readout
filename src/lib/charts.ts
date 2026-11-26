@@ -1,13 +1,17 @@
 import * as echarts from 'echarts/core';
-import { BarChart } from 'echarts/charts';
-import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import type { BarSeriesOption } from 'echarts/charts';
-import type { GridComponentOption, MarkLineComponentOption, TooltipComponentOption } from 'echarts/components';
+import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from 'echarts/charts';
+import type { GridComponentOption, LegendComponentOption, MarkLineComponentOption, TooltipComponentOption } from 'echarts/components';
 
-echarts.use([BarChart, GridComponent, TooltipComponent, MarkLineComponent, SVGRenderer]);
+echarts.use([BarChart, LineChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, MarkLineComponent, SVGRenderer]);
 
-export type ChartOption = echarts.ComposeOption<BarSeriesOption | GridComponentOption | TooltipComponentOption | MarkLineComponentOption>;
+export type ChartOption = echarts.ComposeOption<
+  BarSeriesOption | LineSeriesOption | ScatterSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption | MarkLineComponentOption
+>;
+
+export const GROUP_COLORS = ['#1f5e46', '#a4442a', '#3d6fb0', '#8a6d1f', '#7a5ba6', '#2a7f8f', '#8c5a3c', '#5b6270'];
 
 const GREEN = '#1f5e46';
 const SOFT = '#a9c2b4';
@@ -18,13 +22,51 @@ export interface BarRow {
   name: string;
   count: number;
   pct: number;
+  ci?: { lower: number; upper: number } | null;
+}
+
+const WHISKER = '#3a453f';
+const NO_TIP = { silent: true, tooltip: { show: false }, emphasis: { disabled: true } } as const;
+
+// 误差条是两段堆叠的细条：下限以下透明、区间段可见，占比标签贴在区间上限外侧。
+// 区间是占比的区间，换算成与柱子相同的「人数」刻度（n × 占比）。
+function whisker(data: BarRow[], horizontal: boolean): BarSeriesOption[] {
+  const scale = (r: BarRow) => (r.ci && r.pct > 0 ? r.count / r.pct : 0);
+  const lower = (r: BarRow) => scale(r) * (r.ci?.lower ?? 0);
+  const upper = (r: BarRow) => scale(r) * ((r.ci?.upper ?? 0) - (r.ci?.lower ?? 0));
+  return [
+    {
+      type: 'bar',
+      stack: 'ci',
+      ...NO_TIP,
+      barWidth: 2,
+      barGap: '-100%',
+      data: data.map((r) => ({ value: lower(r), itemStyle: { color: 'transparent' } })),
+    },
+    {
+      type: 'bar',
+      stack: 'ci',
+      ...NO_TIP,
+      barWidth: 2,
+      itemStyle: { color: WHISKER },
+      label: {
+        show: true,
+        position: horizontal ? 'right' : 'top',
+        color: '#4a544e',
+        fontSize: 12,
+        formatter: (p: { dataIndex: number }) => `${(data[p.dataIndex].pct * 100).toFixed(horizontal ? 1 : 0)}%`,
+      },
+      data: data.map((r) => ({ value: upper(r), label: { show: !!r.ci } })),
+    },
+  ];
 }
 
 const tooltip = (total: number): TooltipComponentOption => ({
   trigger: 'axis',
   axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(31, 94, 70, 0.08)' } },
   formatter: (params) => {
-    const p = Array.isArray(params) ? params[0] : params;
+    const list = Array.isArray(params) ? params : [params];
+    const p = list.find((x) => (x.data as { pct?: number }).pct !== undefined) ?? list[0];
     const row = p.data as { value: number; pct?: number };
     const pct = row.pct !== undefined ? `${(row.pct * 100).toFixed(1)}%` : `${((row.value / total) * 100).toFixed(1)}%`;
     return `${p.name}<br/>人数 <b>${row.value}</b> · 占比 <b>${pct}</b>`;
@@ -33,12 +75,13 @@ const tooltip = (total: number): TooltipComponentOption => ({
 
 export function horizontalBars(rows: BarRow[]): { option: ChartOption; height: number } {
   const data = [...rows].reverse();
+  const top = Math.max(0, ...rows.map((r) => (r.ci && r.pct > 0 ? (r.count / r.pct) * r.ci.upper : r.count)));
   return {
     height: rows.length * 30 + 46,
     option: {
       grid: { left: 8, right: 64, top: 8, bottom: 8, containLabel: true },
       tooltip: tooltip(rows.reduce((s, r) => s + r.count, 0)),
-      xAxis: { type: 'value', show: false, max: (v) => v.max * 1.12 },
+      xAxis: { type: 'value', show: false, max: top * 1.12 },
       // 数据倒序后第一项落在最上方，即人数最多的选项在最上面。
       yAxis: {
         type: 'category',
@@ -56,8 +99,8 @@ export function horizontalBars(rows: BarRow[]): { option: ChartOption; height: n
             itemStyle: { color: i === data.length - 1 ? GREEN : SOFT, borderRadius: [0, 3, 3, 0] },
           })),
           barMaxWidth: 22,
-          label: { show: true, position: 'right', color: '#4a544e', fontSize: 12, formatter: (p) => `${((p.data as BarRow).pct * 100).toFixed(1)}%` },
         },
+        ...whisker(data, true),
       ],
     },
   };
@@ -87,6 +130,7 @@ export function verticalBars(rows: BarRow[], opts: { mean?: number | null; rotat
             value: r.count,
             pct: r.pct,
             itemStyle: { color: i === highlight ? GREEN : SOFT, borderRadius: [3, 3, 0, 0] },
+            label: { show: !r.ci },
           })),
           barMaxWidth: 46,
           label: { show: true, position: 'top', color: '#4a544e', fontSize: 12, formatter: (p) => `${((p.data as BarRow).pct * 100).toFixed(0)}%` },
@@ -96,11 +140,85 @@ export function verticalBars(rows: BarRow[], opts: { mean?: number | null; rotat
                 silent: true,
                 symbol: 'none',
                 lineStyle: { color: '#a4442a', type: 'dashed', width: 1.5 },
-                label: { color: '#a4442a', fontSize: 12, rotate: 0, position: 'end', formatter: `均值 ${mean.toFixed(2)}` },
+                label: { color: '#a4442a', fontSize: 12, rotate: 0, position: 'end', distance: 13, formatter: `均值 ${mean.toFixed(2)}` },
                 data: [{ xAxis: mean - 1 }],
               },
         },
+        ...whisker(rows, false),
       ],
+    },
+  };
+}
+
+export interface DotPoint {
+  row: number;
+  value: number;
+  lower: number | null;
+  upper: number | null;
+}
+
+export interface DotSeries {
+  name: string;
+  points: DotPoint[];
+}
+
+// 「点 + 区间」图：每个选项一行，每组一个点，点两侧的横线是 95% 区间。
+export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: boolean): { option: ChartOption; height: number } {
+  const step = series.length > 1 ? Math.min(0.24, 0.8 / series.length) : 0;
+  const offset = (g: number) => ((series.length - 1) / 2 - g) * step;
+  const fmt = (v: number) => (pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(2));
+  const tops = series.flatMap((s) => s.points.map((p) => p.upper ?? p.value));
+  return {
+    height: rowLabels.length * 46 + (series.length > 1 ? 44 : 16),
+    option: {
+      grid: { left: 8, right: 96, top: series.length > 1 ? 36 : 12, bottom: 12, containLabel: true },
+      legend: { show: series.length > 1, top: 0, left: 8, itemWidth: 10, itemHeight: 10, icon: 'circle', textStyle: { color: '#1d2621', fontSize: 12.5 } },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p) => {
+          const d = p as unknown as { data: { point: DotPoint; group: string; name: string } };
+          const ci = d.data.point.lower === null || d.data.point.upper === null ? '区间无法计算' : `95% 区间 ${fmt(d.data.point.lower)}–${fmt(d.data.point.upper)}`;
+          return `${d.data.group} · ${d.data.name}<br/>${fmt(d.data.point.value)}<br/>${ci}`;
+        },
+      },
+      xAxis: {
+        type: 'value',
+        min: pct ? 0 : (v: { min: number }) => Math.min(v.min, 0),
+        max: pct ? 1 : (v: { max: number }) => Math.max(...tops, v.max) * 1.06,
+        splitLine: { lineStyle: { color: GRID } },
+        axisLabel: { color: AXIS, formatter: (v: number) => (pct ? `${Math.round(v * 100)}%` : String(v)) },
+      },
+      yAxis: {
+        type: 'value',
+        min: -0.5,
+        max: rowLabels.length - 0.5,
+        inverse: true,
+        axisLabel: { color: '#1d2621', fontSize: 13, margin: 12, formatter: (v: number) => (Number.isInteger(v) ? (rowLabels[v] ?? '') : '') },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
+      series: series.flatMap((s, g) => {
+        const color = GROUP_COLORS[g % GROUP_COLORS.length];
+        const at = (p: DotPoint) => [p.value, p.row + offset(g)] as [number, number];
+        return [
+          {
+            type: 'line',
+            data: s.points.flatMap((p) => (p.lower === null || p.upper === null ? [] : [[p.lower, p.row + offset(g)], [p.upper, p.row + offset(g)], ['-', '-']])),
+            lineStyle: { color, width: 2 },
+            symbol: 'none',
+            z: 2,
+            ...NO_TIP,
+          },
+          {
+            type: 'scatter',
+            name: s.name,
+            itemStyle: { color },
+            symbolSize: 9,
+            z: 3,
+            data: s.points.map((p) => ({ value: at(p), point: p, group: s.name, name: rowLabels[p.row] })),
+          },
+        ];
+      }),
     },
   };
 }

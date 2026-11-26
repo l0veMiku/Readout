@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Brand, Home } from './components/Home.tsx';
 import { Workspace } from './components/Workspace.tsx';
 import { Report } from './components/Report.tsx';
+import { ComparePage, comparisonFor, pickStillValid } from './components/Compare.tsx';
+import type { ComparisonPick } from './components/Compare.tsx';
 import { Modal } from './components/Modal.tsx';
 import { AISettings, currentConfig } from './components/AISettings.tsx';
 import { parseFile } from './lib/parse.ts';
@@ -11,11 +13,12 @@ import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
 import type { AIResult, Dataset, Question, QuestionType } from './types.ts';
 
-type View = 'home' | 'workspace' | 'report';
+type View = 'home' | 'workspace' | 'compare' | 'report';
 
 function readHash(): View {
   if (location.hash === '#/workspace') return 'workspace';
   if (location.hash === '#/report') return 'report';
+  if (location.hash === '#/compare') return 'compare';
   return 'home';
 }
 
@@ -28,6 +31,8 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false);
   const [hasKey, setHasKey] = useState(() => loadKey() !== '');
   const [view, setView] = useState<View>(readHash);
+  const [pick, setPick] = useState<ComparisonPick | null>(null);
+  const [pickNotice, setPickNotice] = useState('');
 
   const latest = useRef(dataset);
   latest.current = dataset;
@@ -44,8 +49,18 @@ export default function App() {
     else location.hash = hash;
   };
 
+  // 分组题被改成其他题型或忽略后，交叉分析的选择随之作废。
+  useEffect(() => {
+    if (dataset && pick && !pickStillValid(dataset, pick)) {
+      setPick(null);
+      setPickNotice('分组题须为未被忽略的单选题，交叉分析已清空。');
+    }
+  }, [dataset, pick]);
+
   const adopt = (ds: Dataset, name: string) => {
     setDataset(ds);
+    setPick(null);
+    setPickNotice('');
     setAiResults({});
     setTitle(name.replace(/\.[^.]+$/, ''));
     go('workspace');
@@ -69,7 +84,8 @@ export default function App() {
     for (const q of dataset?.questions ?? []) map[q.id] = computeStat(q, dataset?.rows ?? []);
     return map;
   }, [dataset]);
-  const findings = useMemo(() => (dataset ? buildFindings(dataset.rows, dataset.questions) : []), [dataset]);
+  const comparison = useMemo(() => (dataset ? comparisonFor(dataset, pick) : null), [dataset, pick]);
+  const findings = useMemo(() => (dataset ? buildFindings(dataset.rows, dataset.questions, stats) : []), [dataset, stats]);
 
   const changeType = (id: string, type: QuestionType) =>
     setDataset((d) =>
@@ -97,17 +113,28 @@ export default function App() {
 
   const showReport = view === 'report' && !!dataset;
   const showWorkspace = view === 'workspace' && !!dataset;
+  const showCompare = view === 'compare' && !!dataset;
 
   return (
     <>
-      {showWorkspace || showReport ? (
+      {showWorkspace || showCompare || showReport ? (
         <header className="topbar">
           {showReport ? (
             <button className="btn" onClick={() => go('workspace')}>
               ← 返回工作台
             </button>
           ) : (
-            <Brand onClick={() => go('home')} />
+            <>
+              <Brand onClick={() => go('home')} />
+              <nav className="topbar-nav" aria-label="页面">
+                <button className={showCompare ? '' : 'active'} onClick={() => go('workspace')}>
+                  工作台
+                </button>
+                <button className={showCompare ? 'active' : ''} onClick={() => go('compare')}>
+                  交叉分析
+                </button>
+              </nav>
+            </>
           )}
           <div className="topbar-actions">
             <button className="btn ghost" onClick={() => setAiOpen(true)}>
@@ -142,9 +169,19 @@ export default function App() {
           onOpenSettings={() => setAiOpen(true)}
           onRun={runAI}
         />
+      ) : showCompare && dataset ? (
+        <ComparePage
+          dataset={dataset}
+          pick={pick}
+          notice={pickNotice}
+          onSelect={(next) => {
+            setPickNotice('');
+            setPick(next);
+          }}
+        />
       ) : showReport && dataset ? (
         <div className="report-wrap">
-          <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} />
+          <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} />
         </div>
       ) : (
         <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

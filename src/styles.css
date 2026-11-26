@@ -735,6 +735,25 @@ button {
   background: var(--green);
 }
 
+.ci {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.dist td:nth-child(3) {
+  white-space: normal;
+}
+
+.sample-note {
+  margin: 0 0 8px;
+  color: var(--amber);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* 开放题与 AI */
 
 .open-block {
@@ -1186,6 +1205,214 @@ button {
   }
 }
 
+/* 交叉分析 */
+
+.topbar-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.topbar-nav button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--ink-3);
+  border-radius: 8px;
+}
+
+.topbar-nav button:hover {
+  color: var(--ink);
+  background: rgba(31, 94, 70, 0.07);
+}
+
+.topbar-nav button.active {
+  color: var(--green-ink);
+  font-weight: 600;
+}
+
+.compare-wrap {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 30px 20px 80px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.compare-wrap .card h2 {
+  font-size: 19px;
+  margin-bottom: 12px;
+}
+
+.cmp-head {
+  display: grid;
+  gap: 12px;
+}
+
+.cmp-head h2 {
+  font-size: 28px;
+  margin: 0;
+}
+
+.cmp-pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.cmp-pickers label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cmp-pickers span {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.cmp-pickers select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.cmp-caption {
+  margin: 0 0 12px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cmp-verdict > p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.cmp-lines {
+  margin: 12px 0 0;
+  padding-left: 1.2em;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.cmp-lines li + li {
+  margin-top: 4px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.cmp {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmp th {
+  text-align: left;
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cmp td {
+  padding: 7px 8px;
+  border-bottom: 1px solid #efe9dc;
+  vertical-align: top;
+}
+
+.cmp tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cmp .cmp-name {
+  font-weight: 600;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  border-right: 1px solid var(--line);
+  min-width: 120px;
+}
+
+.cmp-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+
+.cmp .cmp-diff b {
+  display: block;
+  font-weight: 500;
+}
+
+.cmp .cmp-diff.clear b {
+  font-weight: 700;
+  color: var(--green-ink);
+}
+
+.cmp-notes {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.cmp-notes p {
+  margin: 0 0 4px;
+  color: var(--amber);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 960px) {
+  .topbar > .brand {
+    display: none;
+  }
+
+  .topbar-nav button {
+    padding: 6px 8px;
+  }
+
+  .compare-wrap {
+    padding: 18px 14px 60px;
+  }
+
+  .cmp-pickers {
+    grid-template-columns: 1fr;
+  }
+
+  .cmp {
+    min-width: 560px;
+  }
+
+  .cmp .cmp-name {
+    min-width: 0;
+    width: 88px;
+  }
+}
+
 @media print {
   @page {
     size: A4;
@@ -1228,10 +1455,32 @@ button {
     font-size: 34pt;
   }
 
-  .q-sec,
   .theme {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .card-body {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cmp-verdict,
+  .chart {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .table-scroll {
+    overflow: visible;
+  }
+
+  .cmp {
+    min-width: 0;
+  }
+
+  .cmp thead {
+    display: table-header-group;
   }
 
   .r-sec h2,

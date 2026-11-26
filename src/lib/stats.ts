@@ -1,11 +1,14 @@
 import type { Dataset, Question } from '../types.ts';
 import { numericValues, splitMulti } from './infer.ts';
-import { formatNumber, formatPct, isAnswer } from './text.ts';
+import { bootstrapIntervals, meanInterval, wilsonInterval } from './intervals.ts';
+import type { Interval } from './intervals.ts';
+import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, isAnswer } from './text.ts';
 
 export interface OptionRow {
   name: string;
   count: number;
   pct: number;
+  ci: Interval | null;
 }
 
 export interface Bin extends OptionRow {
@@ -21,8 +24,8 @@ interface Base {
 export type Stat =
   | (Base & { kind: 'single'; options: OptionRow[] })
   | (Base & { kind: 'multi'; options: OptionRow[]; avgSelected: number })
-  | (Base & { kind: 'scale'; levels: OptionRow[]; numeric: boolean; mean: number | null; median: number | null; sd: number | null; top2: number | null })
-  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[] })
+  | (Base & { kind: 'scale'; levels: OptionRow[]; numeric: boolean; mean: number | null; median: number | null; sd: number | null; top2: number | null; meanCI: Interval | null; top2CI: Interval | null })
+  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[]; meanCI: Interval | null; medianCI: Interval | null })
   | (Base & { kind: 'open'; avgChars: number; samples: string[] });
 
 export function answersOf(q: Question, rows: Record<string, string>[]) {
@@ -46,8 +49,17 @@ function byAppearance(values: string[]): OptionRow[] {
 }
 
 function toRows(entries: { name: string; count: number }[], n: number): OptionRow[] {
-  return entries.map((e) => ({ ...e, pct: n === 0 ? 0 : e.count / n }));
+  return entries.map((e) => ({ ...e, pct: n === 0 ? 0 : e.count / n, ci: n === 0 ? null : wilsonInterval(e.count, n) }));
 }
+
+export function sampleNote(n: number) {
+  if (n < 10) return '有效回答不足 10 条，区间很宽，仅供参考';
+  if (n < 30) return '有效回答不足 30 条，区间较宽';
+  return null;
+}
+
+export const withCI = (value: string, ci: { lower: number; upper: number } | null, digits: number) => (ci ? `${value}（95% 区间 ${formatCI(ci, digits)}）` : value);
+export const withPctCI = (value: string, ci: Interval | null) => (ci ? `${value}（95% 区间 ${formatPctCI(ci)}）` : value);
 
 export function mean(xs: number[]) {
   return xs.length === 0 ? null : xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -76,7 +88,7 @@ function niceStep(raw: number) {
 function histogram(xs: number[]): Bin[] {
   const min = Math.min(...xs);
   const max = Math.max(...xs);
-  if (min === max) return [{ from: min - 0.5, to: max + 0.5, name: String(min), count: xs.length, pct: 1 }];
+  if (min === max) return [{ from: min - 0.5, to: max + 0.5, name: String(min), count: xs.length, pct: 1, ci: null }];
   const step = niceStep((max - min) / 10);
   const digits = Math.max(0, -Math.floor(Math.log10(step)));
   const f = (x: number) => x.toFixed(digits).replace(/\.0+$/, '');
@@ -84,7 +96,7 @@ function histogram(xs: number[]): Bin[] {
   const bins: Bin[] = [];
   for (let i = 0; start + i * step < max - 1e-9; i++) {
     const lo = start + i * step;
-    bins.push({ from: lo, to: lo + step, name: `${f(lo)}–${f(lo + step)}`, count: 0, pct: 0 });
+    bins.push({ from: lo, to: lo + step, name: `${f(lo)}–${f(lo + step)}`, count: 0, pct: 0, ci: null });
   }
   for (const x of xs) {
     bins[Math.min(bins.length - 1, Math.floor((x - start) / step + 1e-9))].count++;
@@ -106,10 +118,11 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
     const nums = numericValues(valid);
     const numeric = nums.length === valid.length;
     if (!numeric) {
-      return { ...base, kind: 'scale', levels: byAppearance(valid), numeric, mean: null, median: null, sd: null, top2: null };
+      return { ...base, kind: 'scale', levels: byAppearance(valid), numeric, mean: null, median: null, sd: null, top2: null, meanCI: null, top2CI: null };
     }
     const levels = toRows(countBy(valid), valid.length).sort((a, b) => Number(a.name) - Number(b.name));
     const distinct = [...new Set(nums)].sort((a, b) => a - b);
+    const top2 = distinct.length < 2 ? null : nums.filter((x) => x >= distinct[distinct.length - 2]).length;
     return {
       ...base,
       kind: 'scale',
@@ -118,12 +131,15 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
       mean: mean(nums),
       median: median(nums),
       sd: sampleSD(nums),
-      top2: distinct.length < 2 ? null : nums.filter((x) => x >= distinct[distinct.length - 2]).length / nums.length,
+      top2: top2 === null ? null : top2 / nums.length,
+      meanCI: meanInterval(nums),
+      top2CI: top2 === null ? null : wilsonInterval(top2, nums.length),
     };
   }
   if (q.type === 'numeric') {
     const nums = numericValues(valid);
-    if (nums.length === 0) return { ...base, kind: 'numeric', mean: null, median: null, sd: null, min: null, max: null, bins: [] };
+    if (nums.length === 0) return { ...base, kind: 'numeric', mean: null, median: null, sd: null, min: null, max: null, bins: [], meanCI: null, medianCI: null };
+    const boot = bootstrapIntervals(nums);
     return {
       ...base,
       kind: 'numeric',
@@ -133,6 +149,8 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
       min: Math.min(...nums),
       max: Math.max(...nums),
       bins: histogram(nums),
+      meanCI: boot.mean,
+      medianCI: boot.median,
     };
   }
   const samples: string[] = [];
@@ -141,21 +159,23 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
   return { ...base, kind: 'open', avgChars: mean(valid.map((v) => v.length)) ?? 0, samples };
 }
 
-export function buildFindings(rows: Record<string, string>[], questions: Question[]): string[] {
+export function buildFindings(rows: Record<string, string>[], questions: Question[], stats?: Record<string, Stat>): string[] {
   const candidates = new Map<Stat['kind'], { order: number; text: string }[]>();
   questions
     .filter((q) => q.included)
     .forEach((q, i) => {
-      const s = computeStat(q, rows);
+      const s = stats?.[q.id] ?? computeStat(q, rows);
       if (s.n === 0) return;
+      const note = sampleNote(s.n);
+      const tail = note ? `${note}。` : '';
       if (s.kind === 'scale' && s.mean !== null) {
-        candidates.set('scale', [...(candidates.get('scale') ?? []), { order: i, text: `「${q.title}」平均 ${formatNumber(s.mean, 2)} 分${s.top2 !== null ? `，${formatPct(s.top2)} 的受访者给出了较高的两档评分` : ''}。` }]);
+        candidates.set('scale', [...(candidates.get('scale') ?? []), { order: i, text: `「${q.title}」平均 ${withCI(`${formatNumber(s.mean, 2)} 分`, s.meanCI, 2)}${s.top2 !== null ? `，${withPctCI(`${formatPct(s.top2)} 的受访者给出了较高的两档评分`, s.top2CI)}` : ''}。${tail}` }]);
       } else if (s.kind === 'single' && s.options.length > 1 && s.options[0].pct < 0.95) {
-        candidates.set('single', [...(candidates.get('single') ?? []), { order: i, text: `「${q.title}」中选择最多的是「${s.options[0].name}」，占 ${formatPct(s.options[0].pct)}。` }]);
+        candidates.set('single', [...(candidates.get('single') ?? []), { order: i, text: `「${q.title}」中选择最多的是「${s.options[0].name}」，占 ${withPctCI(formatPct(s.options[0].pct), s.options[0].ci)}。${tail}` }]);
       } else if (s.kind === 'multi' && s.options.length > 0) {
-        candidates.set('multi', [...(candidates.get('multi') ?? []), { order: i, text: `「${q.title}」里选择最多的是「${s.options[0].name}」（${formatPct(s.options[0].pct)}），平均每人选 ${formatNumber(s.avgSelected)} 项。` }]);
+        candidates.set('multi', [...(candidates.get('multi') ?? []), { order: i, text: `「${q.title}」里选择最多的是「${s.options[0].name}」（${withPctCI(formatPct(s.options[0].pct), s.options[0].ci)}），平均每人选 ${formatNumber(s.avgSelected)} 项。${tail}` }]);
       } else if (s.kind === 'numeric' && s.mean !== null) {
-        candidates.set('numeric', [...(candidates.get('numeric') ?? []), { order: i, text: `「${q.title}」平均 ${formatNumber(s.mean)}，中位数 ${formatNumber(s.median)}。` }]);
+        candidates.set('numeric', [...(candidates.get('numeric') ?? []), { order: i, text: `「${q.title}」平均 ${withCI(formatNumber(s.mean, ciDigits(s.mean)), s.meanCI, ciDigits(s.mean))}，中位数 ${withCI(formatNumber(s.median, ciDigits(s.median)), s.medianCI, ciDigits(s.median))}。${tail}` }]);
       } else if (s.kind === 'open' && s.n >= 5) {
         candidates.set('open', [...(candidates.get('open') ?? []), { order: i, text: `「${q.title}」收到 ${s.n} 条开放回答，平均 ${formatNumber(s.avgChars, 0)} 字。` }]);
       }

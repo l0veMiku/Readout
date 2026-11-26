@@ -4,8 +4,11 @@ import type { Stat } from '../lib/stats.ts';
 import { validRowCount } from '../lib/stats.ts';
 import { formatDateTime } from '../lib/text.ts';
 import { QuestionBody, ThemeList, aiNote, sentence } from './QuestionView.tsx';
+import { ComparisonBody } from './Compare.tsx';
+import type { Comparison } from '../lib/compare.ts';
 
 interface ReportProps {
+  comparison: Comparison | null;
   dataset: Dataset;
   stats: Record<string, Stat>;
   findings: string[];
@@ -13,7 +16,7 @@ interface ReportProps {
   aiResults: Record<string, AIResult>;
 }
 
-export function Report({ dataset, stats, findings, title, aiResults }: ReportProps) {
+export function Report({ comparison, dataset, stats, findings, title, aiResults }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
   const usedAI = included.filter((q) => q.type === 'open' && aiResults[q.id]);
   const models = [...new Set(usedAI.map((q) => aiResults[q.id].model))];
@@ -114,6 +117,16 @@ export function Report({ dataset, stats, findings, title, aiResults }: ReportPro
           );
         })}
       </section>
+
+      {comparison && (
+        <section className="r-sec">
+          <h2>交叉分析</h2>
+          <p className="cmp-caption">
+            按「{comparison.groupTitle}」分组，比较各组的「{comparison.compareTitle}」：共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
+          </p>
+          <ComparisonBody comparison={comparison} inReport />
+        </section>
+      )}
 
       <section className="r-sec methods">
         <h2>方法说明</h2>

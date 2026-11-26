@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
 import { inferType } from './infer.ts';
 import { buildDataset, decodeText, parseGrid } from './parse.ts';
-import { buildFindings, computeStat } from './stats.ts';
+import { buildFindings, computeStat, sampleNote } from './stats.ts';
 
 function demoDataset() {
   const text: string = readFileSync(new URL('../../public/demo-survey.csv', import.meta.url), 'utf8');
@@ -86,6 +86,45 @@ test('findings name the option with the most answers and mix question kinds', ()
   }
   const least = computeStat(ds.questions[2], ds.rows);
   if (least.kind === 'single') assert.ok(least.options.every((o, i, a) => i === 0 || a[i - 1].count >= o.count));
+});
+
+test('every proportion and mean carries a 95% interval, and small samples are flagged', () => {
+  const ds = demoDataset();
+  const stats = Object.fromEntries(ds.questions.map((q) => [q.id, computeStat(q, ds.rows)]));
+  for (const q of ds.questions.filter((x) => x.included && x.type !== 'open')) {
+    const s = stats[q.id];
+    const rows = s.kind === 'single' || s.kind === 'multi' ? s.options : s.kind === 'scale' ? s.levels : [];
+    for (const r of rows) {
+      assert.ok(r.ci, `${q.title} / ${r.name} has an interval`);
+      assert.ok(r.ci.lower <= r.pct && r.pct <= r.ci.upper, `${q.title} / ${r.name} interval covers the estimate`);
+      assert.ok(r.ci.lower >= 0 && r.ci.upper <= 1);
+    }
+    if (s.kind === 'scale') {
+      assert.ok(s.meanCI && s.meanCI.lower < s.mean! && s.mean! < s.meanCI.upper);
+      assert.ok(s.top2CI);
+    }
+    if (s.kind === 'numeric') {
+      assert.ok(s.meanCI && s.medianCI);
+      assert.ok(s.meanCI.lower < s.mean! && s.mean! < s.meanCI.upper);
+      assert.ok(s.bins.every((b) => b.ci === null), 'histogram bins carry no interval');
+    }
+  }
+  const findings = buildFindings(ds.rows, ds.questions, stats);
+  assert.ok(findings.filter((f) => !f.includes('开放回答')).every((f) => f.includes('95% 区间')));
+  assert.ok(findings.some((f) => /\d+\.\d–\d+\.\d）/.test(f)), 'proportion intervals are printed as percentages');
+
+  const scale = (values: string[]) => computeStat({ id: 'q', title: 't', rawTitle: 'q', type: 'scale', included: true }, values.map((v) => ({ q: v })));
+  const few = scale(['4', '5', '3']);
+  assert.ok(few.kind === 'scale' && few.n === 3);
+  if (few.kind === 'scale') {
+    assert.ok(few.meanCI && Math.abs(few.meanCI.lower - 1.51586228824967) < 1e-9);
+    assert.ok(Math.abs(few.meanCI.upper - 6.48413771175033) < 1e-9);
+  }
+  assert.match(`${sampleNote(few.n)}。`, /不足 10 条，区间很宽，仅供参考。$/);
+  const one = scale(['4']);
+  assert.ok(one.kind === 'scale' && one.mean === 4 && one.meanCI === null);
+  assert.equal(sampleNote(30), null);
+  assert.match(`${sampleNote(12)}`, /不足 30 条/);
 });
 
 test('header row is detected below a title row and columns are deduplicated', () => {

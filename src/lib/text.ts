@@ -23,6 +23,23 @@ export function formatNumber(x: number | null, digits = 1) {
   return x.toFixed(digits);
 }
 
+export function ciDigits(x: number | null) {
+  return x !== null && Number.isInteger(x) ? 1 : 2;
+}
+
+export function formatCI(ci: { lower: number; upper: number } | null, digits = 1) {
+  if (!ci) return '—';
+  return `${ci.lower.toFixed(digits)}–${ci.upper.toFixed(digits)}`;
+}
+
+export function formatPctCI(ci: { lower: number; upper: number } | null) {
+  return ci ? formatCI({ lower: ci.lower * 100, upper: ci.upper * 100 }) : '—';
+}
+
+export function formatP(p: number) {
+  return p < 0.001 ? '< 0.001' : p.toFixed(3);
+}
+
 export function formatDateTime(iso: string) {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
