@@ -6,8 +6,10 @@ import { ComparePage, comparisonFor, pickStillValid } from './components/Compare
 import type { ComparisonPick } from './components/Compare.tsx';
 import { Modal } from './components/Modal.tsx';
 import { AISettings, currentConfig } from './components/AISettings.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { parseFile } from './lib/parse.ts';
 import { buildFindings, computeStat } from './lib/stats.ts';
+import type { Stat } from './lib/stats.ts';
 import { answersOf } from './lib/stats.ts';
 import { mergeQuestions, splitGroup, toggleIncluded } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
@@ -37,6 +39,9 @@ export default function App() {
 
   const latest = useRef(dataset);
   latest.current = dataset;
+
+  // 题目对象在改题型/忽略时才会换新，按 rows + 题目对象缓存统计，避免每次编辑重跑全量 Bootstrap。
+  const statCache = useRef(new WeakMap<Record<string, string>[], WeakMap<Question, Stat>>());
 
   useEffect(() => {
     const sync = () => setView(readHash());
@@ -81,8 +86,22 @@ export default function App() {
   };
 
   const stats = useMemo(() => {
-    const map: Record<string, ReturnType<typeof computeStat>> = {};
-    for (const q of dataset?.questions ?? []) map[q.id] = computeStat(q, dataset?.rows ?? []);
+    const map: Record<string, Stat> = {};
+    if (!dataset) return map;
+    let cache = statCache.current.get(dataset.rows);
+    if (!cache) {
+      cache = new WeakMap();
+      statCache.current.set(dataset.rows, cache);
+    }
+    for (const q of dataset.questions) {
+      if (!q.included) continue;
+      let stat = cache.get(q);
+      if (!stat) {
+        stat = computeStat(q, dataset.rows);
+        cache.set(q, stat);
+      }
+      map[q.id] = stat;
+    }
     return map;
   }, [dataset]);
   const comparison = useMemo(() => (dataset ? comparisonFor(dataset, pick) : null), [dataset, pick]);
@@ -107,11 +126,11 @@ export default function App() {
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
-    const snapshot = dataset;
-    const valid = answersOf(q, dataset.rows).valid;
+    const rows = dataset.rows;
+    const valid = answersOf(q, rows).valid;
     const result = await summarizeOpenQuestion(currentConfig(), q.title, valid);
-    // 期间换了文件就不要把结果写到新数据上。
-    if (latest.current === snapshot) setAiResults((r) => ({ ...r, [q.id]: result }));
+    // 期间换了文件就不要把结果写到新数据上；只调整题型不影响同一列的归纳结果。
+    if (latest.current?.rows === rows) setAiResults((r) => ({ ...r, [q.id]: result }));
   };
 
   const showReport = view === 'report' && !!dataset;
@@ -156,41 +175,43 @@ export default function App() {
         </header>
       ) : null}
 
-      {showWorkspace && dataset ? (
-        <Workspace
-          dataset={dataset}
-          stats={stats}
-          findings={findings}
-          title={title}
-          onTitle={setTitle}
-          onChangeType={changeType}
-          onToggle={toggle}
-          onMergeQuestions={mergeIntoGroup}
-          onSplitGroup={split}
-          onLoad={load}
-          onDemo={loadDemo}
-          aiResults={aiResults}
-          hasKey={hasKey}
-          onOpenSettings={() => setAiOpen(true)}
-          onRun={runAI}
-        />
-      ) : showCompare && dataset ? (
-        <ComparePage
-          dataset={dataset}
-          pick={pick}
-          notice={pickNotice}
-          onSelect={(next) => {
-            setPickNotice('');
-            setPick(next);
-          }}
-        />
-      ) : showReport && dataset ? (
-        <div className="report-wrap">
-          <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} />
-        </div>
-      ) : (
-        <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />
-      )}
+      <ErrorBoundary key={`${view}:${dataset?.importedAt ?? ''}`}>
+        {showWorkspace && dataset ? (
+          <Workspace
+            dataset={dataset}
+            stats={stats}
+            findings={findings}
+            title={title}
+            onTitle={setTitle}
+            onChangeType={changeType}
+            onToggle={toggle}
+            onMergeQuestions={mergeIntoGroup}
+            onSplitGroup={split}
+            onLoad={load}
+            onDemo={loadDemo}
+            aiResults={aiResults}
+            hasKey={hasKey}
+            onOpenSettings={() => setAiOpen(true)}
+            onRun={runAI}
+          />
+        ) : showCompare && dataset ? (
+          <ComparePage
+            dataset={dataset}
+            pick={pick}
+            notice={pickNotice}
+            onSelect={(next) => {
+              setPickNotice('');
+              setPick(next);
+            }}
+          />
+        ) : showReport && dataset ? (
+          <div className="report-wrap">
+            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} />
+          </div>
+        ) : (
+          <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />
+        )}
+      </ErrorBoundary>
 
       {aiOpen && (
         <Modal title="模型设置" onClose={() => setAiOpen(false)}>

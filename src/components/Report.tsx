@@ -120,12 +120,7 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults 
                         <p className="ai-note">{aiNote(ai)}</p>
                       </div>
                     ) : (
-                      <div className="r-ai">
-                        <div className="samples">
-                          {stat.kind === 'open' && stat.samples.map((s, j) => <p key={j}>“{s}”</p>)}
-                        </div>
-                        <p className="ai-note">此题未做 AI 归纳，以上为等距抽取的原始回答。</p>
-                      </div>
+                      <p className="ai-note">此题未做 AI 归纳，原始回答不放入报告。</p>
                     ))}
                 </section>
               );
@@ -149,7 +144,8 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults 
         <dl>
           <dt>数据来源</dt>
           <dd>
-            {dataset.fileName}，共 {dataset.rows.length} 行，{dataset.encoding} 编码
+            {dataset.fileName}
+            {dataset.sheet ? `（工作表「${dataset.sheet}」）` : ''}，共 {dataset.rows.length} 行，{dataset.encoding} 编码
             {dataset.skippedRows > 0 ? `，表头上方有 ${dataset.skippedRows} 行非表头内容已跳过` : ''}。
           </dd>
           <dt>题型识别</dt>

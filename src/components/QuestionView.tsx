@@ -387,7 +387,6 @@ export function OpenText({ question, stat, result, hasKey, onOpenSettings, onRun
               <p key={i}>“{s}”</p>
             ))}
           </div>
-          {error && <p className="alert">{error}</p>}
           <div className="ai-actions">
             {hasKey ? (
               <button className="btn primary" onClick={run} disabled={busy}>
@@ -401,6 +400,7 @@ export function OpenText({ question, stat, result, hasKey, onOpenSettings, onRun
           </div>
         </div>
       )}
+      {error && <p className="alert">{error}</p>}
     </div>
   );
 }

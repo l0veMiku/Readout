@@ -31,6 +31,7 @@ export interface Dataset {
   fileName: string;
   importedAt: string;
   encoding: string;
+  sheet?: string;
   skippedRows: number;
   headers: string[];
   rows: Record<string, string>[];

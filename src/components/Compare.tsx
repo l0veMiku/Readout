@@ -5,7 +5,7 @@ import { canCompare, compareQuestions, formatTest } from '../lib/compare.ts';
 import type { Comparison, Diff, MeanCell } from '../lib/compare.ts';
 import { GROUP_COLORS, dotIntervals } from '../lib/charts.ts';
 import { sampleNote } from '../lib/stats.ts';
-import { ciDigits, formatCI, formatNumber, formatP, formatPct, formatPctCI } from '../lib/text.ts';
+import { ciDigits, formatCI, formatNumber, formatP, formatPct, formatPctCI, formatRange } from '../lib/text.ts';
 import { Chart } from './Chart.tsx';
 
 export interface ComparisonPick {
@@ -34,7 +34,7 @@ const diffCell = (d: Diff | null, pct: boolean) => {
         {d.diff > 0 ? '+' : ''}
         {amount(d.diff)}
       </b>
-      <span className="ci">95% 区间 {range(d.lower)}–{range(d.upper)}</span>
+      <span className="ci">95% 区间 {formatRange(d.lower, d.upper, range)}</span>
       {!pct && (
         <span className="ci">
           {d.p === null ? '' : `p ${formatP(d.p)}`} · d {d.d === null ? '—' : d.d.toFixed(2)}
@@ -189,7 +189,7 @@ export function ComparePage({ dataset, pick, notice, onSelect }: { dataset: Data
             <select value={pick?.group ?? ''} onChange={(e) => onSelect({ group: e.target.value, compare: pick?.compare ?? '' })}>
               <option value="">选择一道单选题</option>
               {groupOptions.map((q) => (
-                <option key={q.id} value={q.id} disabled={q.id === pick?.compare}>
+                <option key={q.id} value={q.id} disabled={!isGroupQuestion(q) || q.id === pick?.compare}>
                   {label(q, 'group')}
                 </option>
               ))}

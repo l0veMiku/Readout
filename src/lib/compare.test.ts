@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
 import type { Diff } from './compare.ts';
-import { canCompare, chisqTest, compareQuestions, fisherTwoRows, independenceTest, newcombeInterval, welchDiff } from './compare.ts';
+import { canCompare, chisqTest, compareQuestions, fisherTwoRows, formatTest, independenceTest, newcombeInterval, welchDiff } from './compare.ts';
 import { hours, welchA, welchB } from './refdata.ts';
 
 const close = (actual: number | null | undefined, expected: number, tol = 1e-9) => {
@@ -106,6 +106,14 @@ test('independence test picks chi-square or Fisher and flags sparse tables', () 
   close(small.statistic, 23.8653409090909, 1e-9);
 });
 
+test('sparse tests carry the unreliable note wherever they are printed', () => {
+  const sparse = independenceTest(M_SPARSE)!;
+  assert.equal(sparse.unreliable, true);
+  assert.match(formatTest(sparse), /部分类别人数过少，检验结果仅供参考/);
+  const ok = independenceTest(M_OK)!;
+  assert.doesNotMatch(formatTest(ok), /仅供参考/);
+});
+
 test('Fisher exact p values match R fisher.test for 2x2, 2x3 and 2x4 tables', () => {
   const cases: [number[][], number][] = [
     [[[8, 5], [2, 15]], 0.00688703267413913],
@@ -182,7 +190,7 @@ test('when every interval covers 0 the conclusion says no clear difference and s
   assert.match(r.sentence, /^相对基准组「男」，各选项的占比都没有看到明确差别（所有区间都包含 0）。整体分布检验：.+。$/);
   const d = r.rows.find((x) => x.name === '是')!.diffs[0]!;
   close(d.diff, 0.1, 1e-15);
-  assert.match(r.rows.find((x) => x.name === '是')!.sentence, /^「是」：女 没有看到明确差别（高 10\.0 个百分点，95% 区间 -[\d.]+–[\d.]+）。$/);
+  assert.match(r.rows.find((x) => x.name === '是')!.sentence, /^「是」：女 没有看到明确差别（高 10\.0 个百分点，95% 区间 -[\d.]+ 至 [\d.]+）。$/);
 });
 
 test('more than two groups compare each group with the first one', () => {
@@ -263,7 +271,7 @@ test('scale and numeric comparisons give a mean interval per group and a Welch d
   close(w.p, 0.0870154095418349);
   close(w.d, -1.27886037977871);
   assert.equal(s.rows[0].diffs[1], null);
-  assert.match(s.sentence, /^各组在「c」上的均值没有看到明确差别（相对基准组「大二」）：大一 没有看到明确差别（低 0\.87 分，95% 区间 -1\.90–0\.17）。$/);
+  assert.match(s.sentence, /^各组在「c」上的均值没有看到明确差别（相对基准组「大二」）：大一 没有看到明确差别（低 0\.87 分，95% 区间 -1\.90 至 0\.17）。$/);
 
   const n = compareQuestions(g, mk('c', 'numeric'), rows)!;
   const cell = n.rows[0].cells[0];
@@ -279,7 +287,7 @@ test('a clear difference in means is stated with its size and interval, never wi
   close(d.lower, ref.lower, 1e-15);
   close(d.upper, ref.upper, 1e-15);
   close(d.p, ref.p, 1e-15);
-  assert.match(r.sentence, /^各组在「c」上的均值存在差别（相对基准组「乙」）：甲 低 2\.30（95% 区间 -2\.79–-1\.81）。$/);
+  assert.match(r.sentence, /^各组在「c」上的均值存在差别（相对基准组「乙」）：甲 低 2\.30（95% 区间 -2\.79 至 -1\.81）。$/);
   assert.doesNotMatch(r.sentence, /显著/);
 });
 

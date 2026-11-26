@@ -96,7 +96,7 @@ export function parseThemes(text: string, answers: string[]): Pick<AIResult, 'su
   return { summary: clip(root?.summary, 300), themes: themes.slice(0, 8) };
 }
 
-export function describeHttpError(status: number, baseUrl: string) {
+export function describeHttpError(status: number, baseUrl: string, detail = '') {
   const host = (() => {
     try {
       return new URL(baseUrl).host;
@@ -104,31 +104,71 @@ export function describeHttpError(status: number, baseUrl: string) {
       return baseUrl;
     }
   })();
+  const extra = detail ? `：${detail}` : '';
   if (status === 401 || status === 403) return 'API Key 无效或没有权限，请检查后重试。';
   if (status === 404) return `接口地址或模型名不对（${host} 返回 404）。请核对 Base URL 和模型名。`;
   if (status === 429) return '请求过于频繁或额度不足（429），请稍后重试。';
+  if (status === 400 || status === 422) return `请求失败（HTTP ${status}）${extra}。请检查模型名、参数或接口地址。`;
   if (status >= 500) return `模型服务商暂时不可用（${status}），请稍后重试。`;
-  return `请求失败（HTTP ${status}），请检查接口配置。`;
+  return `请求失败（HTTP ${status}）${extra}，请检查接口配置。`;
+}
+
+function providerDetail(body: string) {
+  const text = body.trim();
+  if (!text) return '';
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown };
+    const message = typeof parsed.error?.message === 'string' ? parsed.error.message : typeof parsed.message === 'string' ? parsed.message : '';
+    return message.replace(/\s+/g, ' ').trim().slice(0, 200);
+  } catch {
+    return text.replace(/\s+/g, ' ').slice(0, 200);
+  }
+}
+
+// 浏览器里直连服务商，http 会把 Key 和问卷内容暴露在明文链路上；只放行本机调试地址。
+export function validateBaseUrl(baseUrl: string) {
+  let url: URL;
+  try {
+    url = new URL(baseUrl.trim());
+  } catch {
+    throw new AIError('Base URL 格式不对，应当形如 https://api.deepseek.com。');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new AIError('接口地址必须以 https:// 或 http:// 开头。');
+  }
+  const local = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
+  if (url.protocol === 'http:' && !local) {
+    throw new AIError('为避免 API Key 和回答明文传输，接口地址必须使用 https://（本机调试可用 http://localhost）。');
+  }
+  return url;
 }
 
 async function chat(config: AIConfig, messages: { role: 'system' | 'user'; content: string }[], maxTokens: number) {
   if (!config.apiKey.trim()) throw new AIError('还没有填写 API Key。');
-  let url: URL;
-  try {
-    url = new URL(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`);
-  } catch {
-    throw new AIError('Base URL 格式不对，应当形如 https://api.deepseek.com。');
-  }
+  const base = validateBaseUrl(config.baseUrl);
+  const url = new URL(`${base.toString().replace(/\/+$/, '')}/chat/completions`);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
+  const send = (withOptional: boolean) =>
+    fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey.trim()}` },
-      body: JSON.stringify({ model: config.model.trim(), messages, temperature: 0.2, max_tokens: maxTokens }),
+      body: JSON.stringify({
+        model: config.model.trim(),
+        messages,
+        ...(withOptional ? { temperature: 0.2, max_tokens: maxTokens } : {}),
+      }),
       signal: controller.signal,
     });
-    if (!res.ok) throw new AIError(describeHttpError(res.status, config.baseUrl));
+  try {
+    let res = await send(true);
+    let detail = res.ok ? '' : providerDetail(await res.text().catch(() => ''));
+    // 推理模型常拒绝 temperature / max_tokens；确认是参数问题后去掉可选参数重试一次。
+    if (!res.ok && res.status === 400 && /temperature|max_tokens|max_completion_tokens|unsupported|unrecognized|not support/i.test(detail)) {
+      res = await send(false);
+      detail = res.ok ? '' : providerDetail(await res.text().catch(() => ''));
+    }
+    if (!res.ok) throw new AIError(describeHttpError(res.status, config.baseUrl, detail));
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] };
     const content = data.choices?.[0]?.message?.content;
     return typeof content === 'string' ? content : '';

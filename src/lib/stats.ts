@@ -2,7 +2,7 @@ import type { Dataset, Question } from '../types.ts';
 import { likertScore, numericValues, splitMultiDetailed } from './infer.ts';
 import { bootstrapIntervals, meanInterval, wilsonInterval } from './intervals.ts';
 import type { Interval } from './intervals.ts';
-import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, isAnswer } from './text.ts';
+import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, formatRange, isAnswer } from './text.ts';
 
 export interface OptionRow {
   name: string;
@@ -97,7 +97,7 @@ function histogram(xs: number[]): Bin[] {
   const bins: Bin[] = [];
   for (let i = 0; start + i * step < max - 1e-9; i++) {
     const lo = start + i * step;
-    bins.push({ from: lo, to: lo + step, name: `${f(lo)}–${f(lo + step)}`, count: 0, pct: 0, ci: null });
+    bins.push({ from: lo, to: lo + step, name: formatRange(lo, lo + step, f), count: 0, pct: 0, ci: null });
   }
   for (const x of xs) {
     bins[Math.min(bins.length - 1, Math.floor((x - start) / step + 1e-9))].count++;

@@ -125,6 +125,36 @@ button {
   padding: 0 4px;
 }
 
+.crash {
+  max-width: 720px;
+  margin: 56px auto;
+  padding: 28px 32px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.crash h1 {
+  font-size: 24px;
+  margin-bottom: 12px;
+}
+
+.crash p {
+  color: var(--ink-2);
+  margin: 0 0 14px;
+}
+
+.crash pre {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-radius: 8px;
+  color: var(--rust);
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .alert {
   background: #fbeee9;
   color: var(--rust);

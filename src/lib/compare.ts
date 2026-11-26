@@ -3,7 +3,7 @@ import { bootstrapIntervals, chisqCDF, logGamma, meanInterval, tCDF, tQuantile, 
 import type { Interval } from './intervals.ts';
 import { likertScore, numericValues, splitMulti } from './infer.ts';
 import { mean, median, sampleSD } from './stats.ts';
-import { formatNumber, formatP, isAnswer } from './text.ts';
+import { formatNumber, formatP, formatRange, isAnswer } from './text.ts';
 
 const COMPARE_TYPES = new Set(['single', 'multi', 'scale', 'numeric']);
 const FISHER_MAX_TABLES = 2_000_000;
@@ -154,7 +154,8 @@ export function independenceTest(table: number[][]): TestResult | null {
 
 export function formatTest(test: TestResult): string {
   const p = `p = ${formatP(test.p)}`;
-  return test.method === 'fisher' ? `Fisher 精确检验，${p}` : `卡方 = ${formatNumber(test.statistic, 2)}，df = ${test.df}，${p}`;
+  const base = test.method === 'fisher' ? `Fisher 精确检验，${p}` : `卡方 = ${formatNumber(test.statistic, 2)}，df = ${test.df}，${p}`;
+  return `${base}${test.unreliable ? '（部分类别人数过少，检验结果仅供参考）' : ''}`;
 }
 
 export interface CompareGroup {
@@ -214,7 +215,7 @@ const excludesZero = (ci: Interval) => ci.lower > 0 || ci.upper < 0;
 
 function diffPhrase(name: string, d: Diff, unit: string, amount: Amount) {
   const size = `${d.diff > 0 ? '高' : '低'} ${amount(Math.abs(d.diff))}${unit}`;
-  const ci = `95% 区间 ${amount(d.lower)}–${amount(d.upper)}`;
+  const ci = `95% 区间 ${formatRange(d.lower, d.upper, amount)}`;
   return excludesZero(d) ? `${name} ${size}（${ci}）` : `${name} 没有看到明确差别（${size}，${ci}）`;
 }
 
@@ -328,7 +329,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     }
     sentence = `相对基准组「${groups[0].name}」，差别最大的一处是${where}；${found.length} 处区间不含 0，${rest} 处没有看到明确差别。`;
   }
-  if (test) sentence += `整体分布检验：${formatTest(test)}。${test.unreliable ? '部分类别人数过少，检验结果仅供参考。' : ''}`;
+  if (test) sentence += `整体分布检验：${formatTest(test)}。`;
   if (compare.type === 'multi') sentence += '各选项分别检验，未做多重比较校正。';
   return { ...base, mode: 'prop', rows: rowsOut, test, sentence };
 }

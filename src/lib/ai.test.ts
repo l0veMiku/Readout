@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AIError, buildMessages, parseThemes, sampleAnswers } from './ai.ts';
+import { AIError, buildMessages, describeHttpError, parseThemes, sampleAnswers, validateBaseUrl } from './ai.ts';
 
 const answers = ['希望学校提供正版 AI 工具', 'Response is fine', '  多开一些   入门讲座  ', ''];
 
@@ -46,4 +46,18 @@ test('buildMessages 给回答编号并截断过长内容', () => {
   assert.ok(messages[1].content.startsWith('题目：你有什么建议？\n\n共 2 条回答：\n1. '));
   assert.equal(messages[1].content.includes('长'.repeat(181)), false);
   assert.ok(messages[1].content.endsWith('\n2. 短回答'));
+});
+
+test('接口地址只接受 https，本机调试地址例外', () => {
+  assert.equal(validateBaseUrl(' https://api.deepseek.com ').host, 'api.deepseek.com');
+  assert.equal(validateBaseUrl('http://localhost:11434/v1').host, 'localhost:11434');
+  assert.equal(validateBaseUrl('http://127.0.0.1:8080').host, '127.0.0.1:8080');
+  assert.throws(() => validateBaseUrl('http://api.example.com'), AIError);
+  assert.throws(() => validateBaseUrl('ftp://api.example.com'), AIError);
+  assert.throws(() => validateBaseUrl('不是网址'), AIError);
+});
+
+test('HTTP 400 会带上服务商的错误正文', () => {
+  assert.match(describeHttpError(400, 'https://api.example.com', 'model deepseek-flash does not exist'), /model deepseek-flash does not exist/);
+  assert.match(describeHttpError(400, 'https://api.example.com'), /HTTP 400/);
 });

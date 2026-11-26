@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
 import { inferType, splitMultiDetailed } from './infer.ts';
-import { buildDataset, decodeText, parseGrid } from './parse.ts';
+import { buildDataset, decodeText, parseGrid, parseWorkbook } from './parse.ts';
 import { buildFindings, computeStat, sampleNote } from './stats.ts';
 import { includedItems, mergeQuestions, splitGroup, toggleIncluded } from './groups.ts';
 
@@ -65,6 +65,10 @@ test('scale, numeric and open stats follow the documented definitions', () => {
   if (hours.kind !== 'numeric') return;
   assert.deepEqual(hours.bins.map((b) => b.name), ['0–5', '5–10', '10–15', '15–20', '20–25', '25–30', '30–35', '35–40', '40–45']);
   assert.deepEqual(hours.bins.map((b) => b.count), [2, 1, 0, 0, 4, 0, 0, 0, 2]);
+
+  const neg = computeStat(mk('numeric'), rowsOf(['-5', '-4', '-1', '0', '2']));
+  if (neg.kind !== 'numeric') return;
+  assert.deepEqual(neg.bins.map((b) => b.name), ['-5 至 -4', '-4 至 -3', '-3 至 -2', '-2 至 -1', '-1 至 0', '0–1', '1–2']);
 
   const open = computeStat(mk('open'), rowsOf(['很好用', '', '一般般吧']));
   assert.equal(open.kind, 'open');
@@ -140,7 +144,7 @@ test('header row is detected below a title row and columns are deduplicated', ()
   assert.equal(ds.questions[0].type, 'meta');
 });
 
-test('GBK and UTF-16 files decode to readable Chinese', () => {
+test('GBK, Big5, GB18030 and UTF-16 files decode to readable text', () => {
   const gbk = Uint8Array.from([0xc4, 0xfa, 0xba, 0xc3]);
   assert.equal(decodeText(gbk.buffer).encoding, 'GBK');
   assert.equal(decodeText(gbk.buffer).text, '您好');
@@ -148,15 +152,35 @@ test('GBK and UTF-16 files decode to readable Chinese', () => {
   assert.equal(decodeText(utf8.buffer).text, '你好');
   const bom16 = new Uint8Array([0xff, 0xfe, 0x60, 0x4f, 0x7d, 0x59]);
   assert.equal(decodeText(bom16.buffer).text, '你好');
+
+  const big5 = Uint8Array.from([169, 109, 166, 87, 44, 171, 176, 165, 171, 44, 186, 161, 183, 78, 171, 215, 10, 177, 105, 164, 84, 44, 165, 120, 165, 95, 44, 171, 68, 177, 96, 186, 161, 183, 78, 10, 167, 245, 165, 124, 44, 176, 170, 182, 175, 44, 164, 241, 184, 251, 186, 161, 183, 78, 10]);
+  const t = decodeText(big5.buffer);
+  assert.equal(t.encoding, 'Big5');
+  assert.ok(t.text.startsWith('姓名,城市,滿意度'));
+
+  const gb18030 = Uint8Array.from([149, 50, 130, 54]);
+  assert.equal(decodeText(gb18030.buffer).encoding, 'GB18030');
+  assert.equal(decodeText(gb18030.buffer).text, '𠀀');
 });
 
-test('xlsx workbooks read from the first sheet as text', async () => {
+test('legacy Western files are not forced through GBK', () => {
+  const latin = Uint8Array.from([80, 114, 233, 110, 111, 109, 44, 86, 105, 108, 108, 101, 44, 83, 97, 116, 105, 115, 102, 97, 99, 116, 105, 111, 110, 10, 82, 101, 110, 233, 44, 71, 101, 110, 232, 118, 101, 44, 84, 114, 232, 115, 32, 115, 97, 116, 105, 115, 102, 97, 105, 116, 10, 65, 110, 97, 44, 76, 105, 115, 98, 111, 97, 44, 83, 97, 116, 105, 115, 102, 97, 105, 116, 10]);
+  const r = decodeText(latin.buffer);
+  assert.equal(r.encoding, 'Windows-1252');
+  assert.ok(r.text.includes('Prénom'));
+});
+
+test('xlsx workbooks read the data sheet, not a leading instructions sheet', async () => {
   const XLSX = await import('@e965/xlsx');
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['序号', '姓名'], [1, '张三'], [2, '李四']]), 'Sheet1');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['填写说明'], ['请按实际情况作答']]), '说明');
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['序号', '姓名'], [1, '张三'], [2, '李四']]), '数据');
   const buf = XLSX.write(book, { type: 'array', bookType: 'xlsx' });
-  const grid = await parseGrid(buf, 'xlsx');
+  const { grid, sheet } = await parseWorkbook(buf);
+  assert.equal(sheet, '数据');
   assert.deepEqual(grid, [['序号', '姓名'], ['1', '张三'], ['2', '李四']]);
+  assert.deepEqual(await parseGrid(buf, 'xlsx'), grid);
+  assert.equal(buildDataset(grid, 'x.xlsx', 'Excel', sheet).sheet, '数据');
 });
 
 test('inference rules for typical survey exports', () => {
@@ -168,6 +192,26 @@ test('inference rules for typical survey exports', () => {
   assert.equal(inferType('5、您有什么建议', rep(['希望多开课', '加强指导老师培训'])), 'open');
   assert.equal(inferType('来自IP', rep(['1.2.3.4', '5.6.7.8'])), 'meta');
   assert.equal(inferType('6、其他', ['', '-']), 'single');
+});
+
+test('explicit type markers beat keyword heuristics, and open text keeps its semicolons', () => {
+  const rep = (xs: string[]) => Array.from({ length: 30 }, (_, i) => xs[i % xs.length]);
+  const options = ['微信公众号平台', '朋友或同事推荐', '搜索引擎广告', '短视频平台', '线下推广活动'];
+  assert.equal(inferType('您通过哪些渠道了解本产品？（单选）', rep(options)), 'single');
+  assert.equal(
+    inferType('您对课程有什么建议？', rep(['挺好的；希望多一些实践', '没有；暂时想不到', '建议增加答疑；作业讲评', '课程节奏合适；老师讲得清楚', '希望有更多案例；多些练习'])),
+    'open',
+  );
+  assert.equal(inferType('请说明您选择这些工具的原因', rep(['写代码；查资料', '写代码；写文档', '查资料；做汇报'])), 'open');
+  assert.equal(inferType('您选修了哪些课程？', rep(['高数；线代', '线代；概率论', '高数；概率论'])), 'multi');
+});
+
+test('bare channel, city, region and total-score headers are real questions, not metadata', () => {
+  const rep = (xs: string[]) => Array.from({ length: 30 }, (_, i) => xs[i % xs.length]);
+  assert.equal(inferType('渠道', rep(['微信', '朋友推荐', '搜索引擎'])), 'single');
+  assert.equal(inferType('城市', rep(['北京', '上海', '合肥'])), 'single');
+  assert.equal(inferType('地区', rep(['华东', '华北', '华南'])), 'single');
+  assert.equal(inferType('总分', rep(['85', '90', '78', '100'])), 'numeric');
 });
 
 test('platform system columns from Tencent and Wenjuanxing exports are metadata', () => {
@@ -262,7 +306,7 @@ test('shared-stem columns form a question group with sub-items', () => {
   assert.equal(ds.groups.length, 1);
   assert.equal(ds.groups[0].title, '第12题');
   assert.equal(ds.questions[1].groupId, ds.groups[0].id);
-  assert.equal(ds.questions[1].title, '环境');
+  assert.equal(ds.questions[1].title, '第12题 · 环境');
   assert.equal(ds.questions[1].type, 'scale');
   const items = includedItems(ds);
   assert.equal(items.length, 1);
@@ -292,7 +336,21 @@ test('questions can be merged, ignored as a group and split again', () => {
   const split = splitGroup(merged, merged.groups[0].id);
   assert.equal(split.groups.length, 0);
   assert.equal(split.questions[0].groupId, undefined);
+  assert.equal(split.questions[0].subTitle, undefined);
+  assert.equal(split.questions[0].title, 'Q1');
   assert.equal(includedItems(split).length, 3);
+
+  const auto = buildDataset(
+    [
+      ['第12题(环境)', '第12题(服务)'],
+      ['5', '4'],
+      ['3', '2'],
+    ],
+    'wjx.xls',
+    'Excel',
+  );
+  const autoSplit = splitGroup(auto, auto.groups[0].id);
+  assert.equal(autoSplit.questions[0].title, '第12题 · 环境');
 
   const withMeta = buildDataset([['序号', 'Q1'], ['1', 'a'], ['2', 'b']], 'x.csv', 'UTF-8');
   assert.equal(withMeta.questions[0].type, 'meta');

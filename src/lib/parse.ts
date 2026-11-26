@@ -13,6 +13,79 @@ export function fileExtension(name: string) {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 }
 
+// 非 UTF-8 文件可能是 GBK/GB18030、Big5 或西文 Windows-1252，逐种解码后按「像不像正常文本」打分取最高。
+// 常见汉字表只覆盖问卷里高频出现的字，用来区分正确解码和乱码，不追求完整字频表。
+const COMMON_HAN = new Set(
+  (
+    '的一是不了在人有我他她它这這个個们們中来來上大为為和国國地到以说說时要時就出会會可也你对對生能而子那得于於着著下自之年过過发發后後作里裡用道行所然家种種事成方多经經么麼去法学學如都同现現当當没沒动動面起看定天分还還进進好小部其些主样樣理心本前开開但因只从從想实實' +
+    '日二三四五六七八九十百千万萬年月號号點点秒姓名性別别年龄齡城區区縣县省街道路村镇鎮滿满度非常比較较一般喜喜欢歡推荐薦支持反对對同意希望建议議意见見问题題回答问卷卷调查調查数据據分析报告報告统计統計结果結果显示顯示范範圍围内容內容' +
+    '学校學校公司企业業单位單位部门部門工作职业職業收入工资資价格價格产品產品质量質量服务服務环境環境交通方便位置学生學生老师老師教师教師医生醫生医院醫院教育学习學習课程課程考试考試作业業毕业畢業就业就業实习實習兼职職薪资資' +
+    '朋友网络網絡广告廣告渠道购买買考虑慮因素健康营养營養口味包装裝选择選擇评价評價改进進提高加强強增加减少減少提供讲座講座指导指導培训培訓帮助幫助需求需要想要计划計劃未来來目前现在現在过去過今后後以前后面後' +
+    '男女学历學歷本科研究生硕士碩士博士高中初中小学小學每天每周次元小时時天周个月個其余餘全部所有大部分一些这些這些那些种类類型号號品牌款式颜色顏安全卫生衛生舒适適漂亮实用實便宜免费費付费線上线上线下線下实体實體店超市商场場餐厅廳饭店飯店酒店宾馆賓館公园園' +
+    '图书馆圖書館车站車站机场機場火车車汽車汽车地铁鐵公交自行车自行車步出租车車网约網約驾车駕旅游旅遊出差休闲閒娱乐娛樂运动運動阅读閱讀音乐音樂电影電影游戏遊戲视频視頻直播社交新闻新聞资讯資訊医疗醫療保险保險休假加班通勤住房租房买房買房贷款貸款存款投资投資理财理財消费消費购物購物支出' +
+    '家庭父母子女配偶邻居鄰居社区社區城乡鄉农村農村污染能源气候氣候天气天氣季节季節春夏秋冬左右前后後东西東西南北内外附近周围周圍整体整體具体體特别別十分稍微更最第另别別再还還都就才只又已经經正在将要將应该應該必须須愿意願打打算决定決定尝试嘗試努力了解知道认为認為觉得覺得感觉覺看到听到聽到遇到想到做到得到达到達到收到找到'
+  ).split(''),
+);
+
+const WESTERN_LETTERS = new Set('àáâãäåæçèéêëìíîïñòóôõöøùúûüýþÿœÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÑÒÓÔÕÖØÙÚÛÜÝŒ'.split(''));
+
+function legacyScore(text: string) {
+  let score = 0;
+  let count = 0;
+  let latinRun = 0;
+  for (const ch of text) {
+    if (count >= 4000) break;
+    count++;
+    const cp = ch.codePointAt(0)!;
+    if (ch === '\uFFFD') {
+      score -= 8;
+      latinRun = 0;
+    } else if (cp < 0x20) {
+      score += ch === '\n' || ch === '\r' || ch === '\t' ? 1 : -8;
+      latinRun = 0;
+    } else if (cp < 0x7f) {
+      score += 1;
+      latinRun = 0;
+    } else if (cp <= 0x9f) {
+      score -= 8;
+      latinRun = 0;
+    } else if (cp >= 0x3400 && cp <= 0x9fff) {
+      score += COMMON_HAN.has(ch) ? 3 : 0.2;
+      latinRun = 0;
+    } else if (cp >= 0x20000 && cp <= 0x2fa1f) {
+      score += 0.5;
+      latinRun = 0;
+    } else if ((cp >= 0x3040 && cp <= 0x30ff) || (cp >= 0x2000 && cp <= 0x206f) || (cp >= 0xff00 && cp <= 0xffef)) {
+      score -= 1;
+      latinRun = 0;
+    } else if (cp <= 0x24f) {
+      score += WESTERN_LETTERS.has(ch) ? 1.2 : -1;
+      // 中文按西文解码时，一个汉字会变成连续两个高位字符；正常西文很少这样。
+      if (latinRun > 0) score -= 1.5;
+      latinRun++;
+    } else {
+      score -= 1.5;
+      latinRun = 0;
+    }
+  }
+  return score / Math.max(1, count);
+}
+
+const LEGACY_DECODERS = [
+  { encoding: 'GB18030', decoder: new TextDecoder('gb18030') },
+  { encoding: 'Big5', decoder: new TextDecoder('big5') },
+  { encoding: 'Windows-1252', decoder: new TextDecoder('windows-1252') },
+];
+
+function hasFourByteGb18030(bytes: Uint8Array) {
+  for (let i = 0; i + 3 < bytes.length; i++) {
+    if (bytes[i] >= 0x81 && bytes[i] <= 0xfe && bytes[i + 1] >= 0x30 && bytes[i + 1] <= 0x39 && bytes[i + 2] >= 0x81 && bytes[i + 2] <= 0xfe && bytes[i + 3] >= 0x30 && bytes[i + 3] <= 0x39) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function decodeText(buf: ArrayBuffer): { text: string; encoding: string } {
   const bytes = new Uint8Array(buf);
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
@@ -25,7 +98,14 @@ export function decodeText(buf: ArrayBuffer): { text: string; encoding: string }
   try {
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'UTF-8' };
   } catch {
-    return { text: new TextDecoder('gbk').decode(bytes), encoding: 'GBK' };
+    let best = { text: '', encoding: 'GBK', score: -Infinity };
+    for (const { encoding, decoder } of LEGACY_DECODERS) {
+      const text = decoder.decode(bytes);
+      const score = legacyScore(text);
+      if (score > best.score) best = { text, encoding, score };
+    }
+    if (best.encoding === 'GB18030' && !hasFourByteGb18030(bytes)) best.encoding = 'GBK';
+    return { text: best.text, encoding: best.encoding };
   }
 }
 
@@ -37,20 +117,29 @@ export function parseCsv(text: string): string[][] {
   return result.data;
 }
 
+export async function parseWorkbook(buf: ArrayBuffer): Promise<{ grid: string[][]; sheet: string }> {
+  const XLSX = await import('@e965/xlsx');
+  let workbook;
+  try {
+    workbook = XLSX.read(buf, { type: 'array' });
+  } catch {
+    throw new ParseError('这个 Excel 文件无法读取，文件可能已损坏，或不是标准的 .xlsx / .xls 格式。');
+  }
+  let best = { grid: [] as string[][], sheet: '', cells: 0 };
+  for (const name of workbook.SheetNames) {
+    const grid = XLSX.utils
+      .sheet_to_json<unknown[]>(workbook.Sheets[name], { header: 1, raw: false, defval: '' })
+      .map((r) => (r ?? []).map((c) => String(c ?? '').trim()));
+    const cells = grid.reduce((sum, r) => sum + r.filter((c) => c !== '').length, 0);
+    // 导出文件的首个工作表常是说明页，取非空单元格最多的工作表作为数据表。
+    if (cells > best.cells) best = { grid, sheet: name, cells };
+  }
+  return { grid: best.grid, sheet: best.sheet };
+}
+
 export function parseGrid(buf: ArrayBuffer, ext: string): Promise<string[][]> {
   if (ext === 'csv') return Promise.resolve(parseCsv(decodeText(buf).text));
-  return import('@e965/xlsx').then((XLSX) => {
-    let workbook;
-    try {
-      workbook = XLSX.read(buf, { type: 'array' });
-    } catch {
-      throw new ParseError('这个 Excel 文件无法读取，文件可能已损坏，或不是标准的 .xlsx / .xls 格式。');
-    }
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) return [];
-    const grid = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
-    return grid.map((r) => (r ?? []).map((c) => String(c ?? '').trim()));
-  });
+  return parseWorkbook(buf).then((w) => w.grid);
 }
 
 export async function parseFile(file: File): Promise<Dataset> {
@@ -60,12 +149,15 @@ export async function parseFile(file: File): Promise<Dataset> {
   }
   const buf = await file.arrayBuffer();
   if (buf.byteLength === 0) throw new ParseError('文件是空的，请重新从问卷平台导出。');
-  const { text, encoding } = ext === 'csv' ? decodeText(buf) : { text: '', encoding: 'Excel' };
-  const grid = ext === 'csv' ? parseCsv(text).map((r) => r.map((c) => c.trim())) : await parseGrid(buf, ext);
-  return buildDataset(grid, file.name, encoding);
+  if (ext === 'csv') {
+    const { text, encoding } = decodeText(buf);
+    return buildDataset(parseCsv(text).map((r) => r.map((c) => c.trim())), file.name, encoding);
+  }
+  const { grid, sheet } = await parseWorkbook(buf);
+  return buildDataset(grid, file.name, 'Excel', sheet);
 }
 
-export function buildDataset(grid: string[][], fileName: string, encoding: string): Dataset {
+export function buildDataset(grid: string[][], fileName: string, encoding: string, sheet?: string): Dataset {
   const body = grid.filter((r) => r.some((c) => c !== ''));
   if (body.length === 0) throw new ParseError('文件里没有读到任何数据。');
   if (body.length - 1 > MAX_ROWS) {
@@ -106,6 +198,7 @@ export function buildDataset(grid: string[][], fileName: string, encoding: strin
     fileName,
     importedAt: new Date().toISOString(),
     encoding,
+    ...(sheet ? { sheet } : {}),
     skippedRows: headerIdx,
     headers: merged.headers,
     rows: merged.rows,

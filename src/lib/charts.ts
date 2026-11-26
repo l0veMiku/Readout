@@ -4,6 +4,7 @@ import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } f
 import { SVGRenderer } from 'echarts/renderers';
 import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from 'echarts/charts';
 import type { GridComponentOption, LegendComponentOption, MarkLineComponentOption, TooltipComponentOption } from 'echarts/components';
+import { escapeHtml, formatRange } from './text.ts';
 
 echarts.use([BarChart, LineChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, MarkLineComponent, SVGRenderer]);
 
@@ -69,7 +70,7 @@ const tooltip = (total: number): TooltipComponentOption => ({
     const p = list.find((x) => (x.data as { pct?: number }).pct !== undefined) ?? list[0];
     const row = p.data as { value: number; pct?: number };
     const pct = row.pct !== undefined ? `${(row.pct * 100).toFixed(1)}%` : `${((row.value / total) * 100).toFixed(1)}%`;
-    return `${p.name}<br/>人数 <b>${row.value}</b> · 占比 <b>${pct}</b>`;
+    return `${escapeHtml(p.name)}<br/>人数 <b>${row.value}</b> · 占比 <b>${pct}</b>`;
   },
 });
 
@@ -106,8 +107,19 @@ export function horizontalBars(rows: BarRow[]): { option: ChartOption; height: n
   };
 }
 
+// 量表档位不一定从 1 开始（如 0–10 分），均值线要按档位数值换算成类目坐标。
+function meanLineIndex(rows: BarRow[], mean: number) {
+  const xs = rows.map((r) => Number(r.name));
+  if (xs.length < 2 || xs.some((x) => !Number.isFinite(x))) return mean - 1;
+  const step = xs[1] - xs[0];
+  if (step <= 0) return mean - 1;
+  const even = xs.every((x, i) => Math.abs(x - (xs[0] + i * step)) < 1e-9);
+  return even ? (mean - xs[0]) / step : mean - 1;
+}
+
 export function verticalBars(rows: BarRow[], opts: { mean?: number | null; rotate?: boolean } = {}): { option: ChartOption; height: number } {
   const mean = opts.mean ?? null;
+  const meanIndex = mean === null ? null : meanLineIndex(rows, mean);
   // 量表图突出最高档，直方图突出最高的分箱。
   const highlight = mean != null ? rows.length - 1 : rows.reduce((best, r, i) => (r.count > rows[best].count ? i : best), 0);
   return {
@@ -134,14 +146,14 @@ export function verticalBars(rows: BarRow[], opts: { mean?: number | null; rotat
           })),
           barMaxWidth: 46,
           label: { show: true, position: 'top', color: '#4a544e', fontSize: 12, formatter: (p) => `${((p.data as BarRow).pct * 100).toFixed(0)}%` },
-          markLine: mean == null
+          markLine: meanIndex === null
             ? undefined
             : {
                 silent: true,
                 symbol: 'none',
                 lineStyle: { color: '#a4442a', type: 'dashed', width: 1.5 },
-                label: { color: '#a4442a', fontSize: 12, rotate: 0, position: 'end', distance: 13, formatter: `均值 ${mean.toFixed(2)}` },
-                data: [{ xAxis: mean - 1 }],
+                label: { color: '#a4442a', fontSize: 12, rotate: 0, position: 'end', distance: 13, formatter: `均值 ${mean!.toFixed(2)}` },
+                data: [{ xAxis: meanIndex }],
               },
         },
         ...whisker(rows, false),
@@ -188,8 +200,11 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
         trigger: 'item',
         formatter: (p) => {
           const d = p as unknown as { data: { point: DotPoint; group: string; name: string } };
-          const ci = d.data.point.lower === null || d.data.point.upper === null ? '区间无法计算' : `95% 区间 ${fmt(d.data.point.lower)}–${fmt(d.data.point.upper)}`;
-          return `${d.data.group} · ${d.data.name}<br/>${fmt(d.data.point.value)}<br/>${ci}`;
+          const ci =
+            d.data.point.lower === null || d.data.point.upper === null
+              ? '区间无法计算'
+              : `95% 区间 ${formatRange(d.data.point.lower, d.data.point.upper, fmt)}`;
+          return `${escapeHtml(d.data.group)} · ${escapeHtml(d.data.name)}<br/>${fmt(d.data.point.value)}<br/>${ci}`;
         },
       },
       xAxis: {

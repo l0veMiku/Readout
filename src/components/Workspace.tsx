@@ -103,6 +103,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
           <input className="report-title" value={title} onChange={(e) => onTitle(e.target.value)} aria-label="报告标题" spellCheck={false} />
           <p className="work-meta">
             {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析{groupCount > 0 ? `（${groupCount} 个题组）` : ''} · {validRowCount(dataset)} 份有效 · {dataset.fileName}
+            {dataset.sheet ? ` · 工作表「${dataset.sheet}」` : ''}
             {dataset.skippedRows > 0 ? ` · 已跳过表头上方 ${dataset.skippedRows} 行` : ''}
           </p>
           <div className="work-actions">

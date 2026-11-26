@@ -14,6 +14,12 @@ export function cleanTitle(raw: string) {
   return t === '' ? raw.trim() : t;
 }
 
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+export function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
 export function formatPct(x: number, digits = 1) {
   return `${(x * 100).toFixed(digits)}%`;
 }
@@ -27,9 +33,14 @@ export function ciDigits(x: number | null) {
   return x !== null && Number.isInteger(x) ? 1 : 2;
 }
 
+// 负数的下限会和连接号挤成「-2.79–-1.81」，改用「至」隔开。
+export function formatRange(lower: number, upper: number, format: (x: number) => string) {
+  return `${format(lower)}${lower < 0 ? ' 至 ' : '–'}${format(upper)}`;
+}
+
 export function formatCI(ci: { lower: number; upper: number } | null, digits = 1) {
   if (!ci) return '—';
-  return `${ci.lower.toFixed(digits)}–${ci.upper.toFixed(digits)}`;
+  return formatRange(ci.lower, ci.upper, (x) => x.toFixed(digits));
 }
 
 export function formatPctCI(ci: { lower: number; upper: number } | null) {
