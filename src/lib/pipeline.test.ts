@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
-import { inferType } from './infer.ts';
+import { inferType, splitMultiDetailed } from './infer.ts';
 import { buildDataset, decodeText, parseGrid } from './parse.ts';
 import { buildFindings, computeStat, sampleNote } from './stats.ts';
+import { includedItems, mergeQuestions, splitGroup, toggleIncluded } from './groups.ts';
 
 function demoDataset() {
   const text: string = readFileSync(new URL('../../public/demo-survey.csv', import.meta.url), 'utf8');
@@ -18,10 +19,14 @@ test('demo survey: every question type is inferred as designed', () => {
   assert.deepEqual(ds.questions.map((q) => q.type), [
     'meta', 'meta', 'single', 'single', 'single', 'single', 'multi', 'multi',
     'scale', 'scale', 'numeric', 'numeric', 'open', 'multi', 'open',
+    'scale', 'scale', 'scale',
   ]);
   assert.equal(ds.questions[2].title, '您的年级是？');
   assert.equal(ds.questions[6].title, '您使用过哪些 AI 工具？');
-  assert.equal(ds.questions.filter((q) => q.included).length, 13);
+  assert.equal(ds.questions.filter((q) => q.included).length, 16);
+  assert.equal(ds.groups.length, 1);
+  assert.equal(ds.groups[0].title, '第14题');
+  assert.equal(ds.questions.filter((q) => q.groupId).length, 3);
 });
 
 test('multi-select splits on separators and counts people, not ticks', () => {
@@ -163,4 +168,135 @@ test('inference rules for typical survey exports', () => {
   assert.equal(inferType('5、您有什么建议', rep(['希望多开课', '加强指导老师培训'])), 'open');
   assert.equal(inferType('来自IP', rep(['1.2.3.4', '5.6.7.8'])), 'meta');
   assert.equal(inferType('6、其他', ['', '-']), 'single');
+});
+
+test('platform system columns from Tencent and Wenjuanxing exports are metadata', () => {
+  const ds = buildDataset(
+    [
+      ['编号', '开始答题时间', '结束答题时间', '答题时长', '语言', '清洗数据结果', '智能清洗数据无效概率', '地理位置省', '地理位置市', '自定义字段', '1.老师所属校区是？'],
+      ['1', '21-Mar-2024 14:01:08', '21-Mar-2024 14:05:37', '269', '', '未清洗', '', '山东省', '济宁市', '', 'A.曲阜'],
+      ['2', '21-Mar-2024 15:01:08', '21-Mar-2024 15:05:37', '269', '', '未清洗', '', '山东省', '日照市', '', 'B.日照'],
+    ],
+    'tencent.csv',
+    'UTF-8',
+  );
+  assert.ok(ds.questions.slice(0, 10).every((q) => q.type === 'meta'), 'system columns are ignored');
+  assert.equal(ds.questions[10].type, 'single');
+});
+
+test('1-10 integer codes are single choice unless the title marks a scale', () => {
+  const rep = (xs: string[]) => Array.from({ length: 60 }, (_, i) => xs[i % xs.length]);
+  assert.equal(inferType('1、手机部数', rep(['1', '2', '3', '4'])), 'single');
+  assert.equal(inferType('2、手机价格', rep(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])), 'single');
+  assert.equal(inferType('3、性别', rep(['1', '2'])), 'single');
+  assert.equal(inferType('4、年龄', rep(['1', '2', '3', '4', '5', '6', '7', '8', '9'])), 'single');
+  assert.equal(inferType('7.打分', rep(['1', '2', '3', '4', '5', '6', '7'])), 'scale');
+  assert.equal(inferType('5、满意度（1–5 分）', rep(['1', '2', '3', '4', '5'])), 'scale');
+  assert.equal(inferType('8.量表题', rep(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])), 'scale');
+});
+
+test('text Likert labels are scored in order and keep their wording', () => {
+  const values = ['非常不符合', '不太符合', '一般', '比较符合', '非常符合', '非常不符合', '不太符合', '一般', '比较符合', '非常符合'];
+  assert.equal(inferType('11、轻食食材健康性是我选择的核心考量', values), 'scale');
+  const q: Question = { id: 'q', title: 't', rawTitle: 't', type: 'scale', included: true };
+  const s = computeStat(q, values.map((v) => ({ q: v })));
+  assert.equal(s.kind, 'scale');
+  if (s.kind !== 'scale') return;
+  assert.deepEqual(s.levels.map((l) => l.name), ['非常不符合', '不太符合', '一般', '比较符合', '非常符合']);
+  assert.equal(s.numeric, false);
+  assert.equal(s.mean, 3);
+  assert.equal(s.top2, 0.4);
+  assert.ok(s.meanCI);
+});
+
+test('a few long option labels stay single choice instead of open text', () => {
+  const city = ['珠三角核心城市（广州、深圳、佛山、东莞）', '粤东地区（汕头、潮州、揭阳、汕尾）', '粤西地区（湛江、茂名、阳江、云浮）'];
+  const values = Array.from({ length: 30 }, (_, i) => city[i % city.length]);
+  assert.equal(inferType('3、你所在的广东省城市', values), 'single');
+});
+
+test('0/1 option columns are merged back into one multi-select question', () => {
+  const ds = buildDataset(
+    [
+      ['序号', '第6题(运动)', '第6题(阅读)', '第6题(其他【请注明】)', '第6题(音乐)'],
+      ['1', '1', '0', '0', '1'],
+      ['2', '0', '1', '1', '0'],
+      ['3', '1', '1', '0', '0'],
+    ],
+    'wjx.xls',
+    'Excel',
+  );
+  assert.deepEqual(ds.headers, ['序号', '第6题（多选）']);
+  assert.equal(ds.questions[1].title, '第6题');
+  assert.equal(ds.questions[1].type, 'multi');
+  const s = computeStat(ds.questions[1], ds.rows);
+  assert.equal(s.kind, 'multi');
+  if (s.kind !== 'multi') return;
+  assert.equal(s.n, 3);
+  assert.equal(s.avgSelected, 2);
+  assert.deepEqual(Object.fromEntries(s.options.map((o) => [o.name, o.count])), { 运动: 2, 阅读: 2, '其他【请注明】': 1, 音乐: 1 });
+});
+
+test('multi-select "other" notes count as one option and keep the text', () => {
+  assert.deepEqual(splitMultiDetailed('其他〖好吃〗'), [{ name: '其他', note: '好吃' }]);
+  const q: Question = { id: 'q', title: 't', rawTitle: 't', type: 'multi', included: true };
+  const s = computeStat(q, ['运动┋其他〖好吃〗', '其他〖宠物〗'].map((v) => ({ q: v })));
+  assert.equal(s.kind, 'multi');
+  if (s.kind !== 'multi') return;
+  const other = s.options.find((o) => o.name === '其他');
+  assert.equal(other?.count, 2);
+  assert.deepEqual(other?.notes, ['好吃', '宠物']);
+});
+
+test('shared-stem columns form a question group with sub-items', () => {
+  const ds = buildDataset(
+    [
+      ['序号', '第12题(环境)', '第12题(服务)'],
+      ['1', '5', '4'],
+      ['2', '3', '2'],
+      ['3', '4', '5'],
+    ],
+    'wjx.xls',
+    'Excel',
+  );
+  assert.equal(ds.groups.length, 1);
+  assert.equal(ds.groups[0].title, '第12题');
+  assert.equal(ds.questions[1].groupId, ds.groups[0].id);
+  assert.equal(ds.questions[1].title, '环境');
+  assert.equal(ds.questions[1].type, 'scale');
+  const items = includedItems(ds);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'group');
+  if (items[0].kind === 'group') assert.equal(items[0].questions.length, 2);
+});
+
+test('questions can be merged, ignored as a group and split again', () => {
+  const ds = buildDataset(
+    [
+      ['Q1', 'Q2', 'Q3'],
+      ['a', 'b', 'c'],
+      ['b', 'c', 'a'],
+    ],
+    'x.csv',
+    'UTF-8',
+  );
+  const merged = mergeQuestions(ds, [ds.questions[0].id, ds.questions[1].id], '两题');
+  assert.equal(merged.groups.length, 1);
+  assert.equal(merged.groups[0].title, '两题');
+  assert.ok(merged.questions[0].groupId);
+  assert.equal(includedItems(merged).length, 2);
+
+  const ignored = toggleIncluded(merged, merged.questions[0].id);
+  assert.ok(ignored.questions.filter((q) => q.groupId).every((q) => !q.included));
+
+  const split = splitGroup(merged, merged.groups[0].id);
+  assert.equal(split.groups.length, 0);
+  assert.equal(split.questions[0].groupId, undefined);
+  assert.equal(includedItems(split).length, 3);
+
+  const withMeta = buildDataset([['序号', 'Q1'], ['1', 'a'], ['2', 'b']], 'x.csv', 'UTF-8');
+  assert.equal(withMeta.questions[0].type, 'meta');
+  const restored = toggleIncluded(withMeta, withMeta.questions[0].id);
+  assert.equal(restored.questions[0].included, true);
+  assert.equal(restored.questions[0].type, 'single');
 });

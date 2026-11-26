@@ -150,6 +150,11 @@ export function verticalBars(rows: BarRow[], opts: { mean?: number | null; rotat
   };
 }
 
+export function meanIntervals(rows: { name: string; value: number; ci: { lower: number; upper: number } | null }[]): { option: ChartOption; height: number } {
+  const points = rows.map((r, i) => ({ row: i, value: r.value, lower: r.ci?.lower ?? null, upper: r.ci?.upper ?? null }));
+  return dotIntervals([{ name: '均值', points }], rows.map((r) => r.name), false);
+}
+
 export interface DotPoint {
   row: number;
   value: number;
@@ -160,6 +165,12 @@ export interface DotPoint {
 export interface DotSeries {
   name: string;
   points: DotPoint[];
+}
+
+// 把带 6% 余量的上限收成整齐刻度，避免坐标轴末端出现 4.876937424804657 这类标签。
+function niceCeil(x: number) {
+  const step = x <= 10 ? 1 : x <= 50 ? 5 : x <= 200 ? 10 : 50;
+  return Math.ceil(x / step) * step;
 }
 
 // 「点 + 区间」图：每个选项一行，每组一个点，点两侧的横线是 95% 区间。
@@ -184,9 +195,9 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
       xAxis: {
         type: 'value',
         min: pct ? 0 : (v: { min: number }) => Math.min(v.min, 0),
-        max: pct ? 1 : (v: { max: number }) => Math.max(...tops, v.max) * 1.06,
+        max: pct ? 1 : (v: { max: number }) => niceCeil(Math.max(...tops, v.max) * 1.06),
         splitLine: { lineStyle: { color: GRID } },
-        axisLabel: { color: AXIS, formatter: (v: number) => (pct ? `${Math.round(v * 100)}%` : String(v)) },
+        axisLabel: { color: AXIS, formatter: (v: number) => (pct ? `${Math.round(v * 100)}%` : String(Math.round(v * 100) / 100)) },
       },
       yAxis: {
         type: 'value',

@@ -58,6 +58,7 @@ const uses = [
 ];
 const help = [[1, 2], [2, 5], [3, 27], [4, 49], [5, 45]];
 const acc = [[1, 6], [2, 17], [3, 44], [4, 47], [5, 14]];
+const effect = [[1, 5], [2, 14], [3, 34], [4, 50], [5, 25]];
 const courses = [
   ['使用技巧入门', 0.5], ['提示词写法', 0.45], ['结合专业课的案例', 0.52], ['AI 伦理与学术规范', 0.41],
   ['编程与自动化', 0.3], ['不需要这类课程', 0.05],
@@ -132,6 +133,9 @@ for (let i = 1; i <= N; i++) {
     rand() < 0.06 ? '-' : pick(problems),
     subset(courses, 6),
     rand() < 0.35 ? '' : pick(suggestions),
+    weighted(effect),
+    weighted(effect),
+    weighted(effect),
   ]);
 }
 
@@ -151,6 +155,9 @@ const header = [
   '11、您认为当前 AI 工具在学习中最大的问题是什么？',
   '12、您希望学校开设哪些 AI 工具相关课程？（多选）',
   '13、您对学校的 AI 工具支持有什么建议？',
+  '第14题(提高学习效率)',
+  '第14题(拓宽知识面)',
+  '第14题(节省时间)',
 ];
 
 mkdirSync(dirname(OUT), { recursive: true });

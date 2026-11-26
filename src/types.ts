@@ -17,6 +17,14 @@ export interface Question {
   rawTitle: string;
   type: QuestionType;
   included: boolean;
+  groupId?: string;
+  subTitle?: string;
+}
+
+export interface QuestionGroup {
+  id: string;
+  title: string;
+  questionIds: string[];
 }
 
 export interface Dataset {
@@ -27,6 +35,7 @@ export interface Dataset {
   headers: string[];
   rows: Record<string, string>[];
   questions: Question[];
+  groups: QuestionGroup[];
 }
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'mixed';

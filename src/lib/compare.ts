@@ -1,7 +1,7 @@
 import type { Question } from '../types.ts';
 import { bootstrapIntervals, chisqCDF, logGamma, meanInterval, tCDF, tQuantile, wilsonInterval } from './intervals.ts';
 import type { Interval } from './intervals.ts';
-import { numericValues, splitMulti } from './infer.ts';
+import { likertScore, numericValues, splitMulti } from './infer.ts';
 import { mean, median, sampleSD } from './stats.ts';
 import { formatNumber, formatP, isAnswer } from './text.ts';
 
@@ -249,11 +249,16 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
   if (picked.length === 0) return { ...base, mode: 'mean', rows: [], sentence: '没有同时有效回答这两道题的记录。' };
 
   if (compare.type === 'scale' || compare.type === 'numeric') {
+    const read = (raw: string) => {
+      const n = numericValues([raw])[0];
+      if (n !== undefined) return n;
+      return compare.type === 'scale' ? likertScore(raw.trim()) : null;
+    };
     const perGroup = groups.map((g) =>
       picked
         .filter((r) => (r[group.id] ?? '').trim() === g.name)
-        .map((r) => numericValues([r[compare.id] ?? ''])[0])
-        .filter((v): v is number => v !== undefined),
+        .map((r) => read(r[compare.id] ?? ''))
+        .filter((v): v is number => v !== null),
     );
     const numeric = compare.type === 'numeric';
     const cells: MeanCell[] = perGroup.map((xs) => ({

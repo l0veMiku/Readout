@@ -1,5 +1,5 @@
 import type { Dataset, Question } from '../types.ts';
-import { numericValues, splitMulti } from './infer.ts';
+import { likertScore, numericValues, splitMultiDetailed } from './infer.ts';
 import { bootstrapIntervals, meanInterval, wilsonInterval } from './intervals.ts';
 import type { Interval } from './intervals.ts';
 import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, isAnswer } from './text.ts';
@@ -9,6 +9,7 @@ export interface OptionRow {
   count: number;
   pct: number;
   ci: Interval | null;
+  notes?: string[];
 }
 
 export interface Bin extends OptionRow {
@@ -111,13 +112,56 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
   // 题型被手动改过时按新口径统计；量表/数值列里混入的非数字回答按文本档位处理。
   if (q.type === 'single') return { ...base, kind: 'single', options: toRows(countBy(valid), valid.length) };
   if (q.type === 'multi') {
-    const perPerson = valid.map((v) => splitMulti(v).length);
-    return { ...base, kind: 'multi', options: toRows(countBy(valid, splitMulti), valid.length), avgSelected: mean(perPerson) ?? 0 };
+    const counts = new Map<string, { count: number; notes: Set<string> }>();
+    const perPerson: number[] = [];
+    for (const v of valid) {
+      const picks = splitMultiDetailed(v);
+      perPerson.push(picks.length);
+      for (const p of picks) {
+        const entry = counts.get(p.name) ?? { count: 0, notes: new Set<string>() };
+        entry.count++;
+        if (p.note) entry.notes.add(p.note);
+        counts.set(p.name, entry);
+      }
+    }
+    const options = [...counts.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'zh'))
+      .map(([name, e]) => ({
+        name,
+        count: e.count,
+        pct: e.count / valid.length,
+        ci: wilsonInterval(e.count, valid.length),
+        ...(e.notes.size ? { notes: [...e.notes] } : {}),
+      }));
+    return { ...base, kind: 'multi', options, avgSelected: mean(perPerson) ?? 0 };
   }
   if (q.type === 'scale') {
     const nums = numericValues(valid);
     const numeric = nums.length === valid.length;
     if (!numeric) {
+      const scores = valid.map((v) => likertScore(v));
+      if (scores.every((s): s is number => s !== null)) {
+        const xs = scores as number[];
+        const labels = [...new Set(valid)].sort((a, b) => (likertScore(a) ?? 0) - (likertScore(b) ?? 0));
+        const levels = labels.map((label) => {
+          const count = valid.filter((v) => v === label).length;
+          return { name: label, count, pct: count / valid.length, ci: wilsonInterval(count, valid.length) };
+        });
+        const distinct = [...new Set(xs)].sort((a, b) => a - b);
+        const top2 = distinct.length < 2 ? null : xs.filter((x) => x >= distinct[distinct.length - 2]).length;
+        return {
+          ...base,
+          kind: 'scale',
+          levels,
+          numeric: false,
+          mean: mean(xs),
+          median: median(xs),
+          sd: sampleSD(xs),
+          top2: top2 === null ? null : top2 / xs.length,
+          meanCI: meanInterval(xs),
+          top2CI: top2 === null ? null : wilsonInterval(top2, xs.length),
+        };
+      }
       return { ...base, kind: 'scale', levels: byAppearance(valid), numeric, mean: null, median: null, sd: null, top2: null, meanCI: null, top2CI: null };
     }
     const levels = toRows(countBy(valid), valid.length).sort((a, b) => Number(a.name) - Number(b.name));

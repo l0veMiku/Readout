@@ -3,10 +3,10 @@ import type { ReactNode } from 'react';
 import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
 import type { OptionRow, Stat } from '../lib/stats.ts';
 import { sampleNote, withCI, withPctCI } from '../lib/stats.ts';
-import { horizontalBars, verticalBars } from '../lib/charts.ts';
+import { horizontalBars, meanIntervals, verticalBars } from '../lib/charts.ts';
 import { ciDigits, formatCI, formatDateTime, formatNumber, formatPct, formatPctCI } from '../lib/text.ts';
 import { QUESTION_TYPES, TYPE_LABELS } from '../types.ts';
-import type { AIResult, Question, QuestionType } from '../types.ts';
+import type { AIResult, Question, QuestionGroup, QuestionType } from '../types.ts';
 import { Chart } from './Chart.tsx';
 
 const smartNumber = (x: number | null) => (x === null ? '—' : Number.isInteger(x) ? String(x) : x.toFixed(2));
@@ -21,6 +21,7 @@ function ChartFor({ stat }: { stat: Stat }) {
   const built = useMemo(() => {
     if (stat.kind === 'single' || stat.kind === 'multi') return stat.options.length ? horizontalBars(stat.options) : null;
     if (stat.kind === 'scale') return stat.levels.length ? verticalBars(stat.levels, { mean: stat.numeric ? stat.mean : null }) : null;
+    // 文本量表按类别轴画分布，均值只出现在结论句和指标里。
     if (stat.kind === 'numeric') return stat.bins.length ? verticalBars(stat.bins, { rotate: true }) : null;
     return null;
   }, [stat]);
@@ -111,7 +112,17 @@ function DistributionTable({ stat }: { stat: Stat }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.name}>
-              <td>{r.name}</td>
+              <td>
+                {r.name}
+                {r.notes && r.notes.length > 0 && (
+                  <ul className="opt-notes">
+                    {r.notes.slice(0, 4).map((n, i) => (
+                      <li key={i}>“{n}”</li>
+                    ))}
+                    {r.notes.length > 4 && <li>另有 {r.notes.length - 4} 条注明</li>}
+                  </ul>
+                )}
+              </td>
               <td>{r.count}</td>
               <td>
                 <span className="meter" aria-hidden="true">
@@ -151,6 +162,112 @@ function DistributionTable({ stat }: { stat: Stat }) {
     );
   }
   return null;
+}
+
+export function GroupBody({ questions, stats }: { questions: Question[]; stats: Record<string, Stat> }) {
+  const rows = questions.flatMap((q) => (stats[q.id] ? [{ q, stat: stats[q.id] }] : []));
+  const means: { name: string; value: number; ci: { lower: number; upper: number } | null }[] = [];
+  for (const { q, stat } of rows) {
+    if ((stat.kind === 'scale' || stat.kind === 'numeric') && stat.mean !== null) means.push({ name: q.subTitle ?? q.title, value: stat.mean, ci: stat.meanCI });
+  }
+  const chart = means.length >= 2 ? meanIntervals(means) : null;
+  return (
+    <>
+      {chart && (
+        <div className="group-chart">
+          <Chart option={chart.option} height={chart.height} />
+        </div>
+      )}
+      {rows.some(({ stat }) => sampleNote(stat.n)) && <p className="sample-note">部分子项的有效回答不足 30 条，均值和区间较宽。</p>}
+      <table className="dist group-table">
+        <thead>
+          <tr>
+            <th>子项</th>
+            <th>有效回答</th>
+            <th>概况</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ q, stat }) => (
+            <tr key={q.id}>
+              <td>
+                {q.subTitle ?? q.title}
+                <span className="group-type">{TYPE_LABELS[q.type]}</span>
+              </td>
+              <td>{stat.n}</td>
+              <td>{groupStatText(stat)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function groupStatText(stat: Stat) {
+  if (stat.n === 0) return '无有效回答';
+  if (stat.kind === 'scale' && stat.mean !== null) {
+    const base = `均值 ${formatNumber(stat.mean, 2)}（95% 区间 ${formatCI(stat.meanCI, 2)}）`;
+    return stat.top2 !== null ? `${base}，Top-2 ${formatPct(stat.top2)}` : base;
+  }
+  if (stat.kind === 'numeric' && stat.mean !== null) {
+    return `均值 ${smartNumber(stat.mean)}（95% 区间 ${formatCI(stat.meanCI, ciDigits(stat.mean))}）`;
+  }
+  if (stat.kind === 'single' && stat.options[0]) return `最多 ${stat.options[0].name} ${pctCI(stat.options[0])}`;
+  if (stat.kind === 'multi' && stat.options[0]) return `选最多 ${stat.options[0].name} ${pctCI(stat.options[0])}`;
+  if (stat.kind === 'open') return `平均 ${formatNumber(stat.avgChars, 0)} 字`;
+  return '—';
+}
+
+interface GroupCardProps {
+  index: number;
+  group: QuestionGroup;
+  questions: Question[];
+  stats: Record<string, Stat>;
+  onChangeType: (type: QuestionType) => void;
+  onIgnore: () => void;
+  onSplit: () => void;
+}
+
+export function GroupCard({ index, group, questions, stats, onChangeType, onIgnore, onSplit }: GroupCardProps) {
+  const types = new Set(questions.map((q) => q.type));
+  const shared = types.size === 1 ? questions[0].type : '';
+  return (
+    <article className="card" id={`card-${index}`}>
+      <header className="card-head">
+        <h3>
+          <span className="qno">{index + 1}</span>
+          {group.title}
+          <span className="tag">题组</span>
+        </h3>
+        <div className="card-tools">
+          <label className="sr-only" htmlFor={`type-${index}`}>
+            {group.title} 的题型
+          </label>
+          <select id={`type-${index}`} value={shared} onChange={(e) => e.target.value && onChangeType(e.target.value as QuestionType)}>
+            {shared === '' && (
+              <option value="" disabled>
+                混合
+              </option>
+            )}
+            {QUESTION_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+          <button className="btn small ghost" onClick={onSplit}>
+            拆分
+          </button>
+          <button className="btn small ghost" onClick={onIgnore}>
+            忽略
+          </button>
+        </div>
+      </header>
+      <p className="card-meta">题组 · {questions.length} 个子项，分别统计</p>
+      <GroupBody questions={questions} stats={stats} />
+    </article>
+  );
 }
 
 export function QuestionBody({ stat, bare }: { stat: Stat; bare?: boolean }) {
@@ -294,10 +411,11 @@ interface CardProps {
   stat: Stat;
   onChangeType: (type: QuestionType) => void;
   onIgnore: () => void;
+  onMerge?: () => void;
   children?: ReactNode;
 }
 
-export function QuestionCard({ index, question, stat, onChangeType, onIgnore, children }: CardProps) {
+export function QuestionCard({ index, question, stat, onChangeType, onIgnore, onMerge, children }: CardProps) {
   return (
     <article className="card" id={`card-${index}`}>
       <header className="card-head">
@@ -316,6 +434,11 @@ export function QuestionCard({ index, question, stat, onChangeType, onIgnore, ch
               </option>
             ))}
           </select>
+          {onMerge && (
+            <button className="btn small ghost" onClick={onMerge}>
+              合并
+            </button>
+          )}
           <button className="btn small ghost" onClick={onIgnore}>
             忽略
           </button>

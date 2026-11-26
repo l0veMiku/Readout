@@ -3,8 +3,10 @@ import type { AIResult, Dataset, Question, QuestionType } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import { computeStat, validRowCount } from '../lib/stats.ts';
 import type { Stat } from '../lib/stats.ts';
+import { includedItems } from '../lib/groups.ts';
 import { FileDrop } from './Home.tsx';
-import { OpenText, QuestionCard } from './QuestionView.tsx';
+import { GroupCard, OpenText, QuestionCard } from './QuestionView.tsx';
+import { Modal } from './Modal.tsx';
 
 interface WorkspaceProps {
   dataset: Dataset;
@@ -14,6 +16,8 @@ interface WorkspaceProps {
   onTitle: (title: string) => void;
   onChangeType: (id: string, type: QuestionType) => void;
   onToggle: (id: string) => void;
+  onMergeQuestions: (ids: string[], title: string) => void;
+  onSplitGroup: (id: string) => void;
   onLoad: (file: File) => Promise<void>;
   onDemo: () => Promise<void>;
   aiResults: Record<string, AIResult>;
@@ -22,14 +26,17 @@ interface WorkspaceProps {
   onRun: (q: Question) => Promise<void>;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
+  const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
   const included = dataset.questions.filter((q) => q.included);
+  const items = includedItems(dataset);
   const ignored = dataset.questions.filter((q) => !q.included);
   const openQuestions = included.filter((q) => q.type === 'open');
   const openAnswers = openQuestions.reduce((s, q) => s + (stats[q.id]?.n ?? 0), 0);
   const aiDone = openQuestions.filter((q) => aiResults[q.id]).length;
+  const groupCount = items.filter((item) => item.kind === 'group').length;
 
   const jump = (i: number) => {
     setNavOpen(false);
@@ -41,19 +48,39 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
       <aside className={`sidebar${navOpen ? ' open' : ''}`}>
         <p className="side-label">题目目录</p>
         <ol className="side-list">
-          {included.map((q, i) => (
-            <li key={q.id}>
-              <button onClick={() => jump(i)}>
-                <span className={`dot dot-${q.type}`} />
-                <span className="side-title">{q.title}</span>
-                <span className="side-type">{TYPE_LABELS[q.type]}</span>
-              </button>
-            </li>
-          ))}
+          {items.map((item, i) =>
+            item.kind === 'group' ? (
+              <li key={item.group.id} className="side-group">
+                <button onClick={() => jump(i)}>
+                  <span className="dot dot-group" />
+                  <span className="side-title">{item.group.title}</span>
+                  <span className="side-type">题组</span>
+                </button>
+                <ol className="side-sub">
+                  {item.questions.map((q) => (
+                    <li key={q.id}>
+                      <button onClick={() => jump(i)}>
+                        <span className="side-title">{q.subTitle ?? q.title}</span>
+                        <span className="side-type">{TYPE_LABELS[q.type]}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </li>
+            ) : (
+              <li key={item.question.id}>
+                <button onClick={() => jump(i)}>
+                  <span className={`dot dot-${item.question.type}`} />
+                  <span className="side-title">{item.question.title}</span>
+                  <span className="side-type">{TYPE_LABELS[item.question.type]}</span>
+                </button>
+              </li>
+            ),
+          )}
         </ol>
         {ignored.length > 0 && (
           <details className="side-ignored">
-            <summary>已忽略的题目 · {ignored.length}</summary>
+            <summary>未纳入分析的列 · {ignored.length}</summary>
             <ul>
               {ignored.map((q) => (
                 <li key={q.id}>
@@ -75,7 +102,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
           </button>
           <input className="report-title" value={title} onChange={(e) => onTitle(e.target.value)} aria-label="报告标题" spellCheck={false} />
           <p className="work-meta">
-            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析 · {validRowCount(dataset)} 份有效 · {dataset.fileName}
+            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析{groupCount > 0 ? `（${groupCount} 个题组）` : ''} · {validRowCount(dataset)} 份有效 · {dataset.fileName}
             {dataset.skippedRows > 0 ? ` · 已跳过表头上方 ${dataset.skippedRows} 行` : ''}
           </p>
           <div className="work-actions">
@@ -127,23 +154,97 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
 
         <h2 className="section-label">逐题分析</h2>
         <div className="cards">
-          {included.map((q, i) => (
-            <QuestionCard
-              key={q.id}
-              index={i}
-              question={q}
-              stat={stats[q.id] ?? computeStat(q, dataset.rows)}
-              onChangeType={(type) => onChangeType(q.id, type)}
-              onIgnore={() => onToggle(q.id)}
-            >
-              {q.type === 'open' && (
-                <OpenText question={q} stat={stats[q.id]} result={aiResults[q.id]} hasKey={hasKey} onOpenSettings={onOpenSettings} onRun={onRun} />
-              )}
-            </QuestionCard>
+          {items.map((item, i) =>
+            item.kind === 'group' ? (
+              <GroupCard
+                key={item.group.id}
+                index={i}
+                group={item.group}
+                questions={item.questions}
+                stats={stats}
+                onChangeType={(type) => item.questions.forEach((q) => onChangeType(q.id, type))}
+                onIgnore={() => onToggle(item.questions[0].id)}
+                onSplit={() => onSplitGroup(item.group.id)}
+              />
+            ) : (
+              <QuestionCard
+                key={item.question.id}
+                index={i}
+                question={item.question}
+                stat={stats[item.question.id] ?? computeStat(item.question, dataset.rows)}
+                onChangeType={(type) => onChangeType(item.question.id, type)}
+                onIgnore={() => onToggle(item.question.id)}
+                onMerge={() => setMergeFrom(item.question)}
+              >
+                {item.question.type === 'open' && (
+                  <OpenText question={item.question} stat={stats[item.question.id]} result={aiResults[item.question.id]} hasKey={hasKey} onOpenSettings={onOpenSettings} onRun={onRun} />
+                )}
+              </QuestionCard>
+            ),
+          )}
+        </div>
+        {included.length === 0 && <p className="empty">所有题目都被忽略了，在左侧「未纳入分析的列」里可以恢复。</p>}
+      </main>
+
+      {mergeFrom && (
+        <Modal title="合并为题组" onClose={() => setMergeFrom(null)}>
+          <MergeForm
+            source={mergeFrom}
+            candidates={included.filter((q) => q.id !== mergeFrom.id)}
+            onCancel={() => setMergeFrom(null)}
+            onConfirm={(ids, name) => {
+              onMergeQuestions(ids, name);
+              setMergeFrom(null);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function MergeForm({ source, candidates, onCancel, onConfirm }: { source: Question; candidates: Question[]; onCancel: () => void; onConfirm: (ids: string[], title: string) => void }) {
+  const [selected, setSelected] = useState<string[]>([source.id]);
+  const [title, setTitle] = useState('');
+  const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  return (
+    <form
+      className="ai-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (selected.length >= 2) onConfirm(selected, title || source.title);
+      }}
+    >
+      <label className="field">
+        <span>题组名称</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={source.title} />
+      </label>
+      <div className="field">
+        <span>选择要并入的题目（至少 2 道）</span>
+        <div className="merge-list">
+          <label className="merge-item">
+            <input type="checkbox" checked disabled />
+            <span>{source.title}</span>
+            <small>{TYPE_LABELS[source.type]}</small>
+          </label>
+          {candidates.map((q) => (
+            <label key={q.id} className="merge-item">
+              <input type="checkbox" checked={selected.includes(q.id)} onChange={() => toggle(q.id)} />
+              <span>{q.title}</span>
+              <small>{TYPE_LABELS[q.type]}</small>
+            </label>
           ))}
         </div>
-        {included.length === 0 && <p className="empty">所有题目都被忽略了，在左侧「已忽略的题目」里可以恢复。</p>}
-      </main>
-    </div>
+      </div>
+      <div className="modal-actions">
+        <button type="button" className="btn ghost" onClick={onCancel}>
+          取消
+        </button>
+        <button className="btn primary" disabled={selected.length < 2}>
+          合并
+        </button>
+      </div>
+    </form>
   );
 }

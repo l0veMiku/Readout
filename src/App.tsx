@@ -9,6 +9,7 @@ import { AISettings, currentConfig } from './components/AISettings.tsx';
 import { parseFile } from './lib/parse.ts';
 import { buildFindings, computeStat } from './lib/stats.ts';
 import { answersOf } from './lib/stats.ts';
+import { mergeQuestions, splitGroup, toggleIncluded } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
 import type { AIResult, Dataset, Question, QuestionType } from './types.ts';
@@ -99,8 +100,10 @@ export default function App() {
         : d,
     );
 
-  const toggle = (id: string) =>
-    setDataset((d) => (d ? { ...d, questions: d.questions.map((q) => (q.id === id ? { ...q, included: !q.included } : q)) } : d));
+  const toggle = (id: string) => setDataset((d) => (d ? toggleIncluded(d, id) : d));
+
+  const mergeIntoGroup = (ids: string[], groupTitle: string) => setDataset((d) => (d ? mergeQuestions(d, ids, groupTitle) : d));
+  const split = (groupId: string) => setDataset((d) => (d ? splitGroup(d, groupId) : d));
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
@@ -162,6 +165,8 @@ export default function App() {
           onTitle={setTitle}
           onChangeType={changeType}
           onToggle={toggle}
+          onMergeQuestions={mergeIntoGroup}
+          onSplitGroup={split}
           onLoad={load}
           onDemo={loadDemo}
           aiResults={aiResults}

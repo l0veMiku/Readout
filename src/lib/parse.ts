@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import type { Dataset } from '../types.ts';
-import { inferQuestions } from './infer.ts';
+import { inferQuestions, splitStem } from './infer.ts';
 
 export class ParseError extends Error {}
 
@@ -100,13 +100,50 @@ export function buildDataset(grid: string[][], fileName: string, encoding: strin
   });
   const rows = dataRows.map((r) => Object.fromEntries(keep.map((i, k) => [headers[k], r[i] ?? ''])));
 
+  const merged = mergeOptionColumns(headers, rows);
+  const inferred = inferQuestions(merged.headers, merged.rows);
   return {
     fileName,
     importedAt: new Date().toISOString(),
     encoding,
     skippedRows: headerIdx,
-    headers,
-    rows,
-    questions: inferQuestions(headers, rows),
+    headers: merged.headers,
+    rows: merged.rows,
+    questions: inferred.questions,
+    groups: inferred.groups,
   };
+}
+
+// 问卷星「按选项序号导出」把一道多选题拆成 第N题(选项) 的 0/1 列，这里合回一道多选题。
+function mergeOptionColumns(headers: string[], rows: Record<string, string>[]) {
+  const stems = new Map<string, string[]>();
+  for (const h of headers) {
+    const s = splitStem(h);
+    if (!s || !/^第\s*\d+\s*题$/.test(s.stem)) continue;
+    stems.set(s.stem, [...(stems.get(s.stem) ?? []), h]);
+  }
+
+  const replaced = new Map<string, string>();
+  const removed = new Set<string>();
+  let mergedAny = false;
+  const outRows = rows.map((r) => ({ ...r }));
+
+  for (const [stem, members] of stems) {
+    if (members.length < 2) continue;
+    const binary = rows.every((r) => members.every((h) => ['', '0', '1'].includes((r[h] ?? '').trim())));
+    if (!binary) continue;
+    const name = `${stem}（多选）`;
+    for (const r of outRows) {
+      r[name] = members
+        .filter((h) => (r[h] ?? '').trim() === '1')
+        .map((h) => splitStem(h)?.sub ?? h)
+        .join('┋');
+    }
+    replaced.set(members[0], name);
+    members.slice(1).forEach((h) => removed.add(h));
+    mergedAny = true;
+  }
+
+  if (!mergedAny) return { headers, rows };
+  return { headers: headers.filter((h) => !removed.has(h)).map((h) => replaced.get(h) ?? h), rows: outRows };
 }
