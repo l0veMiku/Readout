@@ -98,7 +98,9 @@ export function decodeText(buf: ArrayBuffer): { text: string; encoding: string }
   try {
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'UTF-8' };
   } catch {
-    let best = { text: '', encoding: 'GBK', score: -Infinity };
+    // 坏字节很少时，宽容解码的 UTF-8 通常仍保留全部正文；参与打分后，坏字符多的解码会自然落败。
+    const lenient = new TextDecoder('utf-8').decode(bytes);
+    let best = { text: lenient, encoding: 'UTF-8', score: legacyScore(lenient) };
     for (const { encoding, decoder } of LEGACY_DECODERS) {
       const text = decoder.decode(bytes);
       const score = legacyScore(text);

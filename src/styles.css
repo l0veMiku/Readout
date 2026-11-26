@@ -1005,6 +1005,10 @@ button {
   overflow: auto;
 }
 
+.modal:focus {
+  outline: none;
+}
+
 .modal-head {
   display: flex;
   justify-content: space-between;

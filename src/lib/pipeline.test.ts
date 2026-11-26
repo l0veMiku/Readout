@@ -170,6 +170,17 @@ test('legacy Western files are not forced through GBK', () => {
   assert.ok(r.text.includes('Prénom'));
 });
 
+test('a stray bad byte does not drag a UTF-8 file into GBK', () => {
+  const clean = new TextEncoder().encode('姓名,城市,满意度\n张三,北京,非常满意\n李四,上海,比较满意\n王五,广州,不满意\n');
+  const broken = new Uint8Array(clean.length + 1);
+  broken.set(clean);
+  broken[clean.length] = 0x80;
+  const r = decodeText(broken.buffer);
+  assert.equal(r.encoding, 'UTF-8');
+  assert.ok(r.text.includes('非常满意'));
+  assert.equal((r.text.match(/\uFFFD/g) ?? []).length, 1);
+});
+
 test('xlsx workbooks read the data sheet, not a leading instructions sheet', async () => {
   const XLSX = await import('@e965/xlsx');
   const book = XLSX.utils.book_new();
