@@ -41,7 +41,7 @@ test('a score is the mean of the items and exists only when the user asks for it
   const twice = setScore(once, ds.groups[0].id, 'partial80');
   assert.deepEqual(twice.scores, { [ds.groups[0].id]: 'partial80' });
   assert.equal(setScore(twice, ds.groups[0].id, null).scores, undefined);
-  assert.equal(noteOf(generated()), '题组「第1题」5 道量表子题的均值；要求全部子项都作答。');
+  assert.equal(noteOf(generated()), '题组「第1题」5 道量表子题的均值；只算全部子项都作答的问卷。');
 });
 
 test('the missing-data rule decides who gets a score', () => {
@@ -56,7 +56,7 @@ test('reversed items are flipped on the group range before averaging', () => {
   const ds = setScore(reversed, base.groups[0].id, 'complete');
   // 翻转范围是各题观测范围的并集 1–4。第 1 份：4、3、(5−4)、3、1；第 4 份：1、4、(5−1)、1、1。
   assert.deepEqual(values(ds), [String(12 / 5), '', '', String(11 / 5)]);
-  assert.equal(noteOf(ds), '题组「第1题」5 道量表子题的均值，反向题已翻转；要求全部子项都作答。');
+  assert.equal(noteOf(ds), '题组「第1题」5 道量表子题的均值，反向题已翻转；只算全部子项都作答的问卷。');
 });
 
 test('text Likert labels and numbers are scored the same way as for reliability', () => {
