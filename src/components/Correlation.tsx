@@ -144,7 +144,7 @@ export function CorrelationPage({
   const options = dataset.questions.filter((q) => isCorrQuestion(q));
   const chosen = selectedVars(dataset, selected).length;
   return (
-    <div className="compare-wrap">
+    <div className="corr-wrap">
       <header className="cmp-head">
         <h2>相关分析</h2>
         <p className="empty">

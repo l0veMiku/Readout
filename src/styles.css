@@ -1668,14 +1668,33 @@ button {
   line-height: 1.55;
 }
 
+.corr-wrap {
+  display: grid;
+  gap: 18px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 30px 28px 80px;
+}
+
 .corr-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 32px;
   align-items: start;
+  min-width: 0;
+}
+
+.corr-layout > * {
+  min-width: 0;
 }
 
 .corr-pick {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 100px);
   background: var(--sheet);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1704,7 +1723,9 @@ button {
   padding: 0;
   display: grid;
   gap: 2px;
-  max-height: 440px;
+  flex: 1;
+  min-height: 0;
+  max-width: 100%;
   overflow: auto;
 }
 
@@ -1772,6 +1793,10 @@ button {
 }
 
 .corr-matrix {
+  min-width: 0;
+}
+
+.cmp.corr-matrix {
   min-width: 0;
 }
 
@@ -1884,13 +1909,69 @@ button {
   font-size: 13px;
 }
 
+@media (max-width: 1100px) {
+  .corr-layout {
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 22px;
+  }
+}
+
 @media (max-width: 760px) {
+  .corr-wrap {
+    padding: 18px 14px 60px;
+  }
+
   .corr-layout {
     grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .corr-pick {
+    position: static;
+    max-height: none;
+    padding: 10px 12px;
+  }
+
+  .corr-pick-head {
+    margin-bottom: 6px;
   }
 
   .corr-pick ul {
-    max-height: 40vh;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin: 0 -2px;
+    padding: 0 2px 2px;
+  }
+
+  .corr-pick li {
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--sheet);
+  }
+
+  .corr-pick li.on {
+    border-color: var(--green-mid);
+    background: var(--green-soft);
+  }
+
+  .corr-pick label {
+    padding: 6px 10px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .corr-pick label span {
+    flex: none;
+    max-width: 11em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .corr-pick label em {
+    display: none;
   }
 }
 
