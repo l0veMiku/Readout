@@ -28,7 +28,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
   const [expanded, setExpanded] = useState(!!inReport);
   // 行多的表先让箭头和按钮立刻响应，再把表格挂上去。
   const [rowsShown, setRowsShown] = useState(!!inReport);
-  // 一次最多挂 100 行，其余点「显示更多」，避免一次选中几十个变量时卡住。
+  // 一次最多挂 100 行，其余点「再显示」，避免一次选中几十个变量时卡住。
   const [limit, setLimit] = useState(PAGE);
   const toggle = () => {
     const next = !expanded;
@@ -38,7 +38,8 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
   };
   const m = variables.length;
   const shown = inReport ? pairs : pairs.slice(0, Math.min(limit, pairs.length));
-  const block = inReport ? 'q-sec' : 'card';
+  const block = inReport ? 'q-sec' : 'card findings';
+  const H = inReport ? 'h3' : 'h2';
   const notes = [
     '95% 区间不含 0 的系数加粗。',
     `${m} 个变量两两检验，共 ${pairs.length} 对，未做多重比较校正。`,
@@ -99,15 +100,13 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
     ),
     [variables, counts, pairs, m],
   );
-  return (
-    <section className={block}>
-      <div className="cmp-verdict">
-        <p>{corr.sentence}</p>
-      </div>
+
+  const result = (
+    <section className={inReport ? 'q-sec' : 'card'}>
       {matrix}
       <div className="corr-pairs">
         <button type="button" className="corr-pairs-toggle" aria-expanded={expanded} onClick={toggle}>
-          <svg className={`chev${expanded ? ' open' : ''}`} width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <svg className={`chev${expanded ? ' open' : ''}`} width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span>每对的成对样本量、r、95% 区间与 p 值</span>
@@ -167,6 +166,16 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
       </div>
     </section>
   );
+
+  return (
+    <>
+      <section className={block}>
+        <H>结论</H>
+        <p className="corr-verdict">{corr.sentence}</p>
+      </section>
+      {result}
+    </>
+  );
 }
 
 export function CorrelationPage({
@@ -182,54 +191,66 @@ export function CorrelationPage({
   onClear: () => void;
   corr: Correlation | null;
 }) {
+  const [navOpen, setNavOpen] = useState(false);
   const options = dataset.questions.filter((q) => isCorrQuestion(q));
   const chosen = selectedVars(dataset, selected).length;
+  const clear = corr ? corr.pairs.filter(excludesZero).length : 0;
   return (
-    <div className="corr-wrap">
-      <header className="cmp-head">
-        <h2>相关分析</h2>
-        <p className="empty">
-          从左边的数值题、量表题和维度得分里选两个以上，看两两之间的 Pearson 相关系数。每一对只用两者都有作答的问卷，
-          区间用 Fisher z 变换；区间不含 0 的系数加粗。
-        </p>
-      </header>
-      <div className="corr-layout">
-        <aside className="corr-pick">
-          <div className="corr-pick-head">
-            <p className="corr-pick-title">变量（已选 {chosen} 个）</p>
-            {chosen > 0 && (
-              <button type="button" className="link" onClick={onClear}>
-                清空
-              </button>
-            )}
-          </div>
-          <ul>
-            {options.map((q) => {
-              const at = selected.indexOf(q.id);
-              return (
-                <li key={q.id} className={at >= 0 ? 'on' : ''}>
-                  <label>
-                    <input type="checkbox" checked={at >= 0} onChange={() => onToggle(q.id)} />
-                    <span>{varLabel(q)}</span>
-                    <em>{varTag(q)}</em>
+    <div className="workspace">
+      <aside className={`sidebar${navOpen ? ' open' : ''}`}>
+        <p className="side-label">题目目录</p>
+        <ol className="side-list corr-list">
+          {options.map((q) => {
+            const at = selected.indexOf(q.id);
+            return (
+              <li key={q.id}>
+                <button type="button" className={at >= 0 ? 'on' : ''} aria-pressed={at >= 0} onClick={() => onToggle(q.id)}>
+                  <span className={`dot dot-${q.derived ? 'numeric' : q.type}`} />
+                  <span className="side-title">{varLabel(q)}</span>
+                  <span className="side-type">
+                    {varTag(q)}
                     {at >= 0 && <i className="var-badge">{at + 1}</i>}
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-        <div className="corr-result">
-          {corr ? (
-            <CorrBody corr={corr} />
-          ) : (
-            <div className="card corr-empty">
-              <p>{chosen === 0 ? '还没有选变量。' : '至少选两个变量才会出结果。'}</p>
-              <p className="hint">勾选左边的复选框开始；每对变量只用两者都有作答的问卷，样本量写在结果里。</p>
-            </div>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        {chosen > 0 && (
+          <button type="button" className="link corr-clear" onClick={onClear}>
+            清空选择（{chosen}）
+          </button>
+        )}
+      </aside>
+
+      <main className="work-main">
+        <header className="work-head corr-head">
+          <button className="btn small nav-toggle" onClick={() => setNavOpen((v) => !v)}>
+            题目目录
+          </button>
+          <h1 className="corr-title">相关分析</h1>
+          <p className="work-meta">
+            选两个以上数值题、量表题或维度得分；每一对只用两者都有作答的问卷，区间用 Fisher z 变换，区间不含 0 的系数加粗。
+          </p>
+          {corr && (
+            <p className="work-meta">
+              {corr.variables.length} 个变量 · {corr.pairs.length} 对 · {clear} 对区间不含 0
+            </p>
           )}
-        </div>
-      </div>
+        </header>
+
+        {corr ? (
+          <div className="cards">
+            <CorrBody corr={corr} />
+          </div>
+        ) : (
+          <section className="card">
+            <p className="empty">
+              {chosen === 0 ? '还没有选变量。从「题目目录」里勾选两个以上数值题、量表题或维度得分。' : '至少选两个变量才会出结果。'}
+            </p>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

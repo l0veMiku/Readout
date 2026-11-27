@@ -1668,104 +1668,38 @@ button {
   line-height: 1.55;
 }
 
-.corr-wrap {
-  display: grid;
-  gap: 18px;
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 30px 28px 80px;
-}
-
-.corr-layout {
-  display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
-  gap: 32px;
-  align-items: start;
-  min-width: 0;
-}
-
-.corr-layout > * {
-  min-width: 0;
-}
-
-.corr-pick {
-  position: sticky;
-  top: 80px;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 100px);
-  background: var(--sheet);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px 16px;
-}
-
-.corr-pick-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+.corr-head {
   gap: 8px;
-  margin-bottom: 8px;
 }
 
-.corr-pick-title {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 12.5px;
+.corr-title {
+  font-family: var(--serif);
+  font-size: 30px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  line-height: 1.3;
+  margin: 0;
 }
 
-.corr-pick ul {
-  list-style: none;
-  margin: 0 -6px;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-  flex: 1;
-  min-height: 0;
-  max-width: 100%;
-  overflow: auto;
-}
-
-.corr-pick li {
-  border-radius: 8px;
-}
-
-.corr-pick li.on {
+.corr-list button.on {
   background: var(--green-soft);
+  color: var(--ink);
 }
 
-.corr-pick label {
-  display: flex;
+.corr-list .side-type {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  font-size: 13.5px;
-  line-height: 1.45;
-  cursor: pointer;
+  gap: 6px;
 }
 
-.corr-pick label span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.corr-clear {
+  margin: 10px 8px 0;
+  font-size: 13px;
 }
 
-.corr-pick label em {
-  font-style: normal;
-  color: var(--ink-3);
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-
-.corr-result {
-  min-width: 0;
-}
-
-.corr-result .cmp-verdict {
-  margin-bottom: 14px;
+.corr-verdict {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.75;
 }
 
 .var-badge {
@@ -1786,7 +1720,7 @@ button {
   flex: none;
 }
 
-.corr-pick li.on .var-badge {
+.corr-list button.on .var-badge {
   border-color: var(--green);
   background: var(--green);
   color: #fff;
@@ -1871,9 +1805,7 @@ button {
 }
 
 .corr-pairs {
-  margin-top: 16px;
-  border-top: 1px dashed var(--line);
-  padding-top: 14px;
+  margin-top: 14px;
 }
 
 .corr-pairs-toggle {
@@ -1881,11 +1813,13 @@ button {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--sheet);
-  color: var(--ink-2);
+  margin: 0;
+  padding: 12px 2px 2px;
+  border: 0;
+  border-top: 1px dashed var(--line);
+  border-radius: 0;
+  background: none;
+  color: var(--green);
   font-family: inherit;
   font-size: 13.5px;
   font-weight: 600;
@@ -1893,9 +1827,8 @@ button {
   cursor: pointer;
 }
 
-.corr-pairs-toggle:hover {
-  border-color: var(--green-mid);
-  background: #fff;
+.corr-pairs-toggle:hover span {
+  text-decoration: underline;
 }
 
 .corr-pairs-toggle:focus-visible {
@@ -1905,7 +1838,6 @@ button {
 
 .corr-pairs-toggle .chev {
   flex: none;
-  color: var(--green);
   transition: transform 0.15s ease;
 }
 
@@ -1957,90 +1889,6 @@ button {
 
 .corr-notes p {
   color: var(--ink-3);
-}
-
-.corr-empty {
-  margin: 0;
-  padding: 34px 20px;
-  text-align: center;
-  color: var(--ink-2);
-}
-
-.corr-empty p {
-  margin: 0;
-  font-size: 15px;
-}
-
-.corr-empty .hint {
-  margin-top: 8px;
-  color: var(--ink-3);
-  font-size: 13px;
-}
-
-@media (max-width: 1100px) {
-  .corr-layout {
-    grid-template-columns: 230px minmax(0, 1fr);
-    gap: 22px;
-  }
-}
-
-@media (max-width: 760px) {
-  .corr-wrap {
-    padding: 18px 14px 60px;
-  }
-
-  .corr-layout {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .corr-pick {
-    position: static;
-    max-height: none;
-    padding: 10px 12px;
-  }
-
-  .corr-pick-head {
-    margin-bottom: 6px;
-  }
-
-  .corr-pick ul {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    margin: 0 -2px;
-    padding: 0 2px 2px;
-  }
-
-  .corr-pick li {
-    flex: none;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--sheet);
-  }
-
-  .corr-pick li.on {
-    border-color: var(--green-mid);
-    background: var(--green-soft);
-  }
-
-  .corr-pick label {
-    padding: 6px 10px;
-    gap: 6px;
-    font-size: 13px;
-  }
-
-  .corr-pick label span {
-    flex: none;
-    max-width: 11em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .corr-pick label em {
-    display: none;
-  }
 }
 
 @media (max-width: 960px) {
