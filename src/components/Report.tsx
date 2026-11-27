@@ -8,6 +8,8 @@ import { GroupBody, QuestionBody, ThemeList, aiNote, sentence } from './Question
 import { ComparisonBody } from './Compare.tsx';
 import type { Comparison } from '../lib/compare.ts';
 import type { Reliability } from '../lib/reliability.ts';
+import { cleaningSentence } from '../lib/cleaning.ts';
+import type { CleaningSummary } from '../lib/cleaning.ts';
 
 interface ReportProps {
   comparison: Comparison | null;
@@ -17,9 +19,11 @@ interface ReportProps {
   findings: string[];
   title: string;
   aiResults: Record<string, AIResult>;
+  rows: Record<string, string>[];
+  cleaning: CleaningSummary | null;
 }
 
-export function Report({ comparison, dataset, stats, findings, title, aiResults, reliabilities }: ReportProps) {
+export function Report({ comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
   const anyReversed = dataset.questions.some((q) => q.included && q.reversed);
   const anyReliability = Object.values(reliabilities).some((r) => r !== null && r !== undefined);
@@ -58,7 +62,7 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
           <div>
             <dt>样本</dt>
             <dd>
-              {validRowCount(dataset)} 份有效（共 {dataset.rows.length} 份）
+              {validRowCount(dataset, rows)} 份有效（共 {dataset.rows.length} 份{cleaning && cleaning.excluded > 0 ? `，剔除 ${cleaning.excluded} 份` : ''}）
             </dd>
           </div>
           <div>
@@ -75,6 +79,7 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
 
       <section className="r-sec">
         <h2>摘要</h2>
+        {cleaning && <p className="r-note">{cleaningSentence(cleaning)}</p>}
         {findings.length ? (
           <ol className="finding-list">
             {findings.map((f) => (
@@ -217,6 +222,19 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
                 单选题做整表的独立性检验，多选题每个选项分别做「选/未选」检验。默认 Pearson 卡方（不做连续性校正）；
                 恰好两组且有格子期望频数小于 5 时改用 Fisher 精确检验；三组及以上且超过 20% 的格子期望频数小于 5
                 时，结果旁标注不可靠。多选题各选项分别检验，未做多重比较校正，p 值偏乐观。
+              </dd>
+            </>
+          )}
+          {cleaning && (
+            <>
+              <dt>数据清洗</dt>
+              <dd>
+                {cleaning.rules.map((r) => `${r.label}，${r.rule.mode === 'exclude' ? '命中即剔除' : '命中仅标记'}`).join('；')}
+                {cleaning.rules.length > 0 && cleaning.dropped > 0 ? '；' : ''}
+                {cleaning.dropped > 0 ? `手动剔除 ${cleaning.dropped} 份` : ''}
+                {cleaning.flagged > 0 ? `。被标记的问卷${cleaning.includeFlagged ? '已' : '未'}计入分析` : ''}
+                {cleaning.kept > 0 ? `。另有 ${cleaning.kept} 份命中剔除规则但手动保留` : ''}
+                。
               </dd>
             </>
           )}

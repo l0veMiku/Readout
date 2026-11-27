@@ -1032,6 +1032,113 @@ button {
   outline: none;
 }
 
+.modal-wide {
+  max-width: 760px;
+}
+
+.clean-summary {
+  margin: 0;
+  font-size: 14px;
+}
+
+.rule-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.rule-head,
+.rule-foot,
+.rule-inputs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 13.5px;
+}
+
+.rule-head .link,
+.rule-foot .rule-count {
+  margin-left: auto;
+}
+
+.rule-count {
+  color: var(--ink-3);
+}
+
+.rule-card input[type='number'] {
+  width: 88px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+}
+
+.rule-card select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+  max-width: 100%;
+}
+
+.rule-card input[type='number'],
+.rule-card select {
+  margin: 0 6px;
+}
+
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.clean-details {
+  font-size: 13.5px;
+}
+
+.clean-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.clean-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid #efe9dc;
+}
+
+.clean-list .why {
+  flex: 1;
+  color: var(--ink-3);
+}
+
+.copy-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.copy-text {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
 .modal-head {
   display: flex;
   justify-content: space-between;

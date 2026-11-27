@@ -44,11 +44,11 @@ const diffCell = (d: Diff | null, pct: boolean) => {
   );
 };
 
-export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null) {
+export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null, rows: Record<string, string>[] = dataset.rows) {
   if (!pick?.group || !pick.compare || !pickStillValid(dataset, pick)) return null;
   const g = dataset.questions.find((q) => q.id === pick.group);
   const c = dataset.questions.find((q) => q.id === pick.compare);
-  return g && c ? compareQuestions(g, c, dataset.rows, { deferBootstrap: true }) : null;
+  return g && c ? compareQuestions(g, c, rows, { deferBootstrap: true }) : null;
 }
 
 export function ComparisonBody({ comparison, inReport }: { comparison: Comparison; inReport?: boolean }) {

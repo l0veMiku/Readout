@@ -263,7 +263,8 @@ export function buildFindings(rows: Record<string, string>[], questions: Questio
   return picked.sort((a, b) => a.order - b.order).map((c) => c.text);
 }
 
-export function validRowCount(dataset: Dataset) {
+// rows 传计入分析的问卷；不传就是全部行。
+export function validRowCount(dataset: Dataset, rows: Record<string, string>[] = dataset.rows) {
   const included = dataset.questions.filter((q) => q.included);
-  return dataset.rows.filter((r) => included.some((q) => isAnswer(r[q.id]))).length;
+  return rows.filter((r) => included.some((q) => isAnswer(r[q.id]))).length;
 }

@@ -4,6 +4,7 @@ import { TYPE_LABELS } from '../types.ts';
 import { computeStat, validRowCount } from '../lib/stats.ts';
 import type { Stat } from '../lib/stats.ts';
 import type { Reliability } from '../lib/reliability.ts';
+import type { CleaningSummary } from '../lib/cleaning.ts';
 import { includedItems } from '../lib/groups.ts';
 import { FileDrop } from './Home.tsx';
 import { GroupCard, OpenText, QuestionCard } from './QuestionView.tsx';
@@ -27,9 +28,12 @@ interface WorkspaceProps {
   onRun: (q: Question) => Promise<void>;
   reliabilities: Record<string, Reliability | null>;
   onToggleReversed: (id: string) => void;
+  rows: Record<string, string>[];
+  cleaning: CleaningSummary | null;
+  onOpenCleaning: () => void;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed, rows, cleaning, onOpenCleaning }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
@@ -105,7 +109,8 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
           </button>
           <input className="report-title" value={title} onChange={(e) => onTitle(e.target.value)} aria-label="报告标题" spellCheck={false} />
           <p className="work-meta">
-            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析{groupCount > 0 ? `（${groupCount} 个题组）` : ''} · {validRowCount(dataset)} 份有效 · {dataset.fileName}
+            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析{groupCount > 0 ? `（${groupCount} 个题组）` : ''} · {validRowCount(dataset, rows)} 份有效
+            {cleaning && cleaning.excluded > 0 ? `（已剔除 ${cleaning.excluded} 份）` : ''} · {dataset.fileName}
             {dataset.sheet ? ` · 工作表「${dataset.sheet}」` : ''}
             {dataset.skippedRows > 0 ? ` · 已跳过表头上方 ${dataset.skippedRows} 行` : ''}
           </p>
@@ -123,6 +128,9 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
               }}
             >
               载入示例
+            </button>
+            <button className="btn" onClick={onOpenCleaning}>
+              数据清洗{cleaning && cleaning.excluded + cleaning.flagged > 0 ? `（剔除 ${cleaning.excluded}${cleaning.flagged > 0 ? `，标记 ${cleaning.flagged}` : ''}）` : ''}
             </button>
           </div>
           {error && <p className="alert">{error}</p>}
@@ -143,7 +151,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
 
         <section className="stat-cards">
           {[
-            ['有效样本', String(validRowCount(dataset)), `共 ${dataset.rows.length} 份`],
+            ['有效样本', String(validRowCount(dataset, rows)), cleaning && cleaning.excluded > 0 ? `回收 ${dataset.rows.length} 份，剔除 ${cleaning.excluded} 份` : `共 ${dataset.rows.length} 份`],
             ['纳入题目', String(included.length), `已忽略 ${ignored.length} 道`],
             ['开放题回答', String(openAnswers), `${openQuestions.length} 道开放题`],
             ['AI 已归纳', String(aiDone), aiDone ? `共 ${openQuestions.length} 道开放题` : '需要配置模型'],
@@ -177,7 +185,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 key={item.question.id}
                 index={i}
                 question={item.question}
-                stat={stats[item.question.id] ?? computeStat(item.question, dataset.rows)}
+                stat={stats[item.question.id] ?? computeStat(item.question, rows)}
                 onChangeType={(type) => onChangeType(item.question.id, type)}
                 onIgnore={() => onToggle(item.question.id)}
                 onMerge={() => setMergeFrom(item.question)}

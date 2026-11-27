@@ -29,6 +29,25 @@ export interface QuestionGroup {
   questionIds: string[];
 }
 
+export type RuleType = 'duration' | 'straightline' | 'screening' | 'completion' | 'contradiction';
+
+// exclude：命中即剔除；flag：只标记，是否计入分析由 Cleaning.includeFlagged 决定。
+export type RuleMode = 'exclude' | 'flag';
+
+export type CleaningRule =
+  | { id: string; type: 'duration'; maxSeconds: number; mode: RuleMode }
+  | { id: string; type: 'straightline'; groupId: string; mode: RuleMode }
+  | { id: string; type: 'screening'; questionId: string; option: string; mode: RuleMode }
+  | { id: string; type: 'completion'; minPercent: number; mode: RuleMode }
+  | { id: string; type: 'contradiction'; groupId: string; maxGap: number; mode: RuleMode };
+
+export interface Cleaning {
+  rules: CleaningRule[];
+  includeFlagged: boolean;
+  // 单份例外，键是数据行号：keep 留下被规则剔除的问卷，drop 手动剔除。
+  overrides: Record<number, 'keep' | 'drop'>;
+}
+
 export interface Dataset {
   fileName: string;
   importedAt: string;
@@ -39,6 +58,8 @@ export interface Dataset {
   rows: Record<string, string>[];
   questions: Question[];
   groups: QuestionGroup[];
+  // 没有清洗设置时不存在，所有问卷都计入分析。
+  cleaning?: Cleaning;
 }
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'mixed';

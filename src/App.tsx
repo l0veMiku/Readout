@@ -8,6 +8,7 @@ import { withMedianIntervals } from './lib/compare.ts';
 import type { Comparison } from './lib/compare.ts';
 import type { Interval } from './lib/intervals.ts';
 import { Modal } from './components/Modal.tsx';
+import { CleaningPanel } from './components/CleaningPanel.tsx';
 import { AISettings, currentConfig } from './components/AISettings.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { parseFile } from './lib/parse.ts';
@@ -16,11 +17,13 @@ import type { Stat } from './lib/stats.ts';
 import { answersOf } from './lib/stats.ts';
 import { reliability } from './lib/reliability.ts';
 import type { Reliability } from './lib/reliability.ts';
+import { analysisRows, cleaningSummary } from './lib/cleaning.ts';
+import type { CleaningSummary } from './lib/cleaning.ts';
 import { bootstrapPool } from './lib/bootstrapPool.ts';
 import { mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
-import type { AIResult, Dataset, Question, QuestionType } from './types.ts';
+import type { AIResult, Cleaning, Dataset, Question, QuestionType } from './types.ts';
 
 type View = 'home' | 'workspace' | 'compare' | 'report';
 
@@ -95,19 +98,22 @@ export default function App() {
     adopt(await parseFile(file), file.name);
   };
 
+  // 计入分析的问卷。没有清洗设置时就是 dataset.rows 本身；原始行、清洗设置和纳入的题都没变时沿用同一个数组，统计缓存才用得上。
+  const includedKey = dataset ? dataset.questions.filter((q) => q.included).map((q) => q.id).join(' ') : '';
+  const rows = useMemo(() => (dataset ? analysisRows(dataset) : []), [dataset?.rows, dataset?.cleaning, includedKey]);
   const stats = useMemo(() => {
     const map: Record<string, Stat> = {};
     if (!dataset) return map;
-    let cache = statCache.current.get(dataset.rows);
+    let cache = statCache.current.get(rows);
     if (!cache) {
       cache = new WeakMap();
-      statCache.current.set(dataset.rows, cache);
+      statCache.current.set(rows, cache);
     }
     for (const q of dataset.questions) {
       if (!q.included) continue;
       let stat = cache.get(q);
       if (!stat) {
-        stat = computeStat(q, dataset.rows, { deferBootstrap: true });
+        stat = computeStat(q, rows, { deferBootstrap: true });
         cache.set(q, stat);
       }
       map[q.id] = stat;
@@ -117,7 +123,6 @@ export default function App() {
   // 首屏不等重抽样：点估计和直方图先渲染，再把缺区间的数值题交给后台线程。
   useEffect(() => {
     if (!dataset) return;
-    const { rows } = dataset;
     const cache = statCache.current.get(rows);
     if (!cache) return;
     for (const q of dataset.questions) {
@@ -131,9 +136,9 @@ export default function App() {
         setBootTick((t) => t + 1);
       });
     }
-  }, [dataset]);
+  }, [dataset, rows]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
-  const baseComparison = useMemo(() => (dataset ? comparisonFor(dataset, pick) : null), [dataset, pick]);
+  const baseComparison = useMemo(() => (dataset ? comparisonFor(dataset, pick, rows) : null), [dataset, pick, rows]);
   const [medianCis, setMedianCis] = useState<{ for: Comparison; done: (Interval | null | undefined)[] } | null>(null);
   const comparing = useRef(new WeakSet<Comparison>());
   const currentComparison = useRef(baseComparison);
@@ -166,14 +171,16 @@ export default function App() {
     const settled = medianCis?.for === baseComparison ? medianCis.done.filter((ci) => ci !== undefined).length : 0;
     return questions + groups - settled;
   }, [stats, baseComparison, medianCis]);
-  const findings = useMemo(() => (dataset ? buildFindings(dataset.rows, dataset.questions, stats) : []), [dataset, stats]);
+  const findings = useMemo(() => (dataset ? buildFindings(rows, dataset.questions, stats) : []), [dataset, rows, stats]);
   // 题组的信度：有两道以上量表子题时才有结果。反向标记一变，题目对象换新，这里跟着重算。
   const reliabilities = useMemo(() => {
     const map: Record<string, Reliability | null> = {};
     if (!dataset) return map;
-    for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), dataset.rows);
+    for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), rows);
     return map;
-  }, [dataset]);
+  }, [dataset, rows]);
+  const cleaning = useMemo<CleaningSummary | null>(() => (dataset ? cleaningSummary(dataset) : null), [dataset]);
+  const applyCleaning = (next: Cleaning | undefined) => setDataset((d) => (d ? { ...d, cleaning: next } : d));
 
   const changeType = (id: string, type: QuestionType) =>
     setDataset((d) =>
@@ -195,13 +202,14 @@ export default function App() {
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
-    const rows = dataset.rows;
+    const snapshot = dataset;
     const valid = answersOf(q, rows).valid;
     const result = await summarizeOpenQuestion(currentConfig(), q.title, valid);
-    // 期间换了文件就不要把结果写到新数据上；只调整题型不影响同一列的归纳结果。
-    if (latest.current?.rows === rows) setAiResults((r) => ({ ...r, [q.id]: result }));
+    // 期间换了文件或改了清洗设置，就不要把结果写到新数据上；只调整题型不影响同一列的归纳结果。
+    if (latest.current?.rows === snapshot.rows && latest.current?.cleaning === snapshot.cleaning) setAiResults((r) => ({ ...r, [q.id]: result }));
   };
 
+  const [cleaningOpen, setCleaningOpen] = useState(false);
   const showReport = view === 'report' && !!dataset;
   const showWorkspace = view === 'workspace' && !!dataset;
   const showCompare = view === 'compare' && !!dataset;
@@ -264,6 +272,9 @@ export default function App() {
             onRun={runAI}
             reliabilities={reliabilities}
             onToggleReversed={reverse}
+            rows={rows}
+            cleaning={cleaning}
+            onOpenCleaning={() => setCleaningOpen(true)}
           />
         ) : showCompare && dataset ? (
           <ComparePage
@@ -279,7 +290,7 @@ export default function App() {
         ) : showReport && dataset ? (
           <div className="report-wrap">
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
-            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} />
+            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} rows={rows} cleaning={cleaning} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />
@@ -293,6 +304,12 @@ export default function App() {
             onClose={() => setAiOpen(false)}
             onSave={() => setHasKey(loadKey() !== '')}
           />
+        </Modal>
+      )}
+
+      {cleaningOpen && dataset && (
+        <Modal title="数据清洗" wide onClose={() => setCleaningOpen(false)}>
+          <CleaningPanel dataset={dataset} onClose={() => setCleaningOpen(false)} onApply={applyCleaning} />
         </Modal>
       )}
     </>
