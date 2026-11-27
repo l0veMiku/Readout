@@ -47,14 +47,23 @@ test('a strong correlation matches R, and the interval excludes 0', () => {
   assert.ok(pair.ci!.lower > 0);
 });
 
-test('a perfect correlation matches R: interval [-1, 1], p = 0', () => {
+test('a perfect correlation matches R: the interval collapses to the coefficient, p = 0', () => {
   const pair = pearsonPair([1, 2, 3, 4], [2, 4, 6, 8]);
   close(pair.r, 1);
-  assert.deepEqual(pair.ci, { lower: -1, upper: 1 });
+  assert.deepEqual(pair.ci, { lower: 1, upper: 1 });
   assert.equal(pair.p, 0);
   const negative = pearsonPair([1, 2, 3, 4], [8, 6, 4, 2]);
   close(negative.r, -1);
+  assert.deepEqual(negative.ci, { lower: -1, upper: -1 });
   assert.equal(negative.p, 0);
+});
+
+test('three paired answers give r and p but no interval, as in R', () => {
+  const pair = pearsonPair([1, 2, 3], [1, 4, 4]);
+  assert.equal(pair.n, 3);
+  close(pair.r, 0.8660254037844387);
+  close(pair.p, 0.3333333333333333);
+  assert.equal(pair.ci, null);
 });
 
 test('lists the reason instead of a coefficient when it cannot be computed', () => {
@@ -92,7 +101,7 @@ test('the correlation uses the paired sample and the sentence names the stronges
   assert.equal(corr.pairs.length, 1);
   assert.equal(corr.pairs[0].n, 4);
   assert.match(corr.sentence, /2 个变量两两相关，共 1 对/);
-  assert.match(corr.sentence, /最强的一对是「每周时长」和「满意度」/);
+  assert.match(corr.sentence, /最强的一对是「每周时长」和「满意度」（r = 1.00，95% 区间 1.00–1.00，n = 4）/);
 });
 
 test('scale questions read text levels as numbers', () => {

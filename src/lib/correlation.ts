@@ -2,6 +2,7 @@ import type { Question } from '../types.ts';
 import type { Interval } from './intervals.ts';
 import { tCDF } from './intervals.ts';
 import { likertScore, numericValues } from './infer.ts';
+import { formatCI } from './text.ts';
 
 // 相关分析的变量：题目标题就是矩阵里的名字。
 export interface CorrVariable {
@@ -68,15 +69,19 @@ export function pearsonPair(xs: (number | null)[], ys: (number | null)[]): Omit<
   }
   if (sxx === 0) return { n, r: null, ci: null, p: null, blocker: '取值没有变化' };
   if (syy === 0) return { n, r: null, ci: null, p: null, blocker: '取值没有变化' };
-  const r = sxy / Math.sqrt(sxx * syy);
-  // |r| = 1 时 Fisher z 发散，区间是 [-1, 1]，p 是 0；与 R 的结果一致。
-  const clamped = Math.max(-1, Math.min(1, r));
-  if (Math.abs(clamped) === 1) return { n, r: clamped, ci: { lower: -1, upper: 1 }, p: 0, blocker: null };
+  const r = Math.max(-1, Math.min(1, sxy / Math.sqrt(sxx * syy)));
+  // |r| = 1 时 Fisher z 发散，R 的区间退化为 1–1（或 −1 至 −1）；p 取 0。
+  if (Math.abs(r) === 1) return { n, r, ci: { lower: r, upper: r }, p: 0, blocker: null };
   const z = 0.5 * Math.log((1 + r) / (1 - r));
-  const half = Z975 / Math.sqrt(n - 3);
+  // R 的 cor.test 在 n = 3 时不给区间（1/√(n−3) 发散），这里同样只给 r 和 p。
+  let ci: Interval | null = null;
+  if (n > 3) {
+    const half = Z975 / Math.sqrt(n - 3);
+    ci = { lower: Math.tanh(z - half), upper: Math.tanh(z + half) };
+  }
   const t = r * Math.sqrt((n - 2) / (1 - r * r));
   const p = 2 * (1 - tCDF(Math.abs(t), n - 2));
-  return { n, r, ci: { lower: Math.tanh(z - half), upper: Math.tanh(z + half) }, p, blocker: null };
+  return { n, r, ci, p, blocker: null };
 }
 
 const excludesZero = (ci: Interval) => ci.lower > 0 || ci.upper < 0;
@@ -94,12 +99,13 @@ export function correlationFor(dataset: { questions: Question[] }, ids: string[]
       pairs.push({ a: variables[i].title, b: variables[j].title, ...pearsonPair(values[i], values[j]) });
     }
   }
-  const usable = pairs.filter((p) => p.r !== null && p.ci);
-  const clear = usable.filter((p) => excludesZero(p.ci!));
+  const usable = pairs.filter((p) => p.r !== null);
+  const clear = pairs.filter((p) => p.ci !== null && excludesZero(p.ci));
   const strongest = usable.reduce<CorrPair | null>((best, p) => (best === null || Math.abs(p.r!) > Math.abs(best.r!) ? p : best), null);
   let sentence = `${variables.length} 个变量两两相关，共 ${pairs.length} 对；${clear.length} 对的 95% 区间不含 0。`;
   if (strongest) {
-    sentence += `最强的一对是「${strongest.a}」和「${strongest.b}」（r = ${strongest.r!.toFixed(2)}，n = ${strongest.n}）。`;
+    const interval = strongest.ci ? `，95% 区间 ${formatCI(strongest.ci, 2)}` : '，成对样本不足 4 份，没有区间';
+    sentence += `最强的一对是「${strongest.a}」和「${strongest.b}」（r = ${strongest.r!.toFixed(2)}${interval}，n = ${strongest.n}）。`;
   } else {
     sentence += '没有一对能算出系数。';
   }

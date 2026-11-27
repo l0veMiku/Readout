@@ -28,6 +28,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
     `${m} 个变量两两检验，共 ${pairs.length} 对，未做多重比较校正。`,
     '每一对只用两者都有作答的问卷（成对删除）。',
   ];
+  if (pairs.some((p) => p.r !== null && !p.ci)) notes.push('成对样本只有 3 份的变量对不显示区间：Fisher z 需要 4 份以上。');
   return (
     <section className={block}>
       <p className="cmp-verdict">{corr.sentence}</p>
@@ -68,7 +69,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                   return (
                     <td key={col.id} className={excludesZero(p) ? 'clear' : ''}>
                       <b>{formatNumber(p.r, 2)}</b>
-                      <span className="ci">{formatCI(p.ci, 2)}</span>
+                      <span className="ci">{p.ci ? formatCI(p.ci, 2) : '样本不足 4 份'}</span>
                     </td>
                   );
                 })}
@@ -102,7 +103,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                 ) : (
                   <>
                     <td className={excludesZero(p) ? 'corr-bold' : ''}>{formatNumber(p.r, 2)}</td>
-                    <td>{formatCI(p.ci, 2)}</td>
+                    <td>{p.ci ? formatCI(p.ci, 2) : '—'}</td>
                     <td>{formatP(p.p ?? 1)}</td>
                   </>
                 )}

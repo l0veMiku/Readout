@@ -79,6 +79,7 @@ export default function App() {
     setDataset(ds);
     setPick(null);
     setPickNotice('');
+    setCorrVars([]);
     setAiResults({});
     setTitle(name.replace(/\.[^.]+$/, ''));
     go('workspace');
@@ -118,14 +119,15 @@ export default function App() {
   const analysis = useMemo(() => {
     const derived = new Map(scoreList.flatMap((s) => (s.question && s.missing ? [[s.group.id, s.question] as [string, Question]] : [])));
     if (!dataset || derived.size === 0) return dataset;
-    const lastMember = new Map<string, number>();
+    // 题组卡片画在第一个成员的位置，得分就插在它后面；合并出来的题组成员不一定相邻。
+    const anchor = new Map<string, number>();
     dataset.questions.forEach((q, i) => {
-      if (q.groupId && derived.has(q.groupId)) lastMember.set(q.groupId, i);
+      if (q.groupId && derived.has(q.groupId) && !anchor.has(q.groupId)) anchor.set(q.groupId, i);
     });
     const questions: Question[] = [];
     dataset.questions.forEach((q, i) => {
       questions.push(q);
-      if (q.groupId && lastMember.get(q.groupId) === i) questions.push(derived.get(q.groupId)!);
+      if (q.groupId && anchor.get(q.groupId) === i) questions.push(derived.get(q.groupId)!);
     });
     return { ...dataset, questions };
   }, [dataset, scoreList]);
