@@ -213,7 +213,8 @@ export function evaluateCleaning(dataset: Dataset): CleaningResult {
   const rules = (cleaning?.rules ?? []).filter(ruleReady);
   const n = dataset.rows.length;
   const duration = rules.some((r) => r.type === 'duration') ? (durationInfo(dataset) ?? undefined) : undefined;
-  const included = dataset.questions.filter((q) => q.included);
+  // 得分是从子题算出来的，不算进完成率的分母。
+  const included = dataset.questions.filter((q) => q.included && !q.derived);
   const groups = new Map<string, GroupContext | null>();
   const hits: CleaningRule[][] = Array.from({ length: n }, () => []);
   const counts: Record<string, number> = {};

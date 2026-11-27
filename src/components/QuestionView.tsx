@@ -4,10 +4,12 @@ import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
 import type { OptionRow, Stat } from '../lib/stats.ts';
 import { sampleNote, withCI, withPctCI } from '../lib/stats.ts';
 import type { Reliability } from '../lib/reliability.ts';
+import { SCORE_MISSING_LABELS } from '../lib/scores.ts';
+import type { ScoreState } from '../lib/scores.ts';
 import { horizontalBars, meanIntervals, verticalBars } from '../lib/charts.ts';
 import { ciDigits, formatCI, formatDateTime, formatNumber, formatPct, formatPctCI } from '../lib/text.ts';
 import { QUESTION_TYPES, TYPE_LABELS } from '../types.ts';
-import type { AIResult, Question, QuestionGroup, QuestionType } from '../types.ts';
+import type { AIResult, Question, QuestionGroup, QuestionType, ScoreMissing } from '../types.ts';
 import { Chart } from './Chart.tsx';
 
 const smartNumber = (x: number | null) => (x === null ? '—' : Number.isInteger(x) ? String(x) : x.toFixed(2));
@@ -290,12 +292,14 @@ interface GroupCardProps {
   stats: Record<string, Stat>;
   reliability?: Reliability | null;
   onToggleReversed?: (id: string) => void;
+  score?: ScoreState;
+  onScore?: (groupId: string, missing: ScoreMissing | null) => void;
   onChangeType: (type: QuestionType) => void;
   onIgnore: () => void;
   onSplit: () => void;
 }
 
-export function GroupCard({ index, group, questions, stats, reliability, onToggleReversed, onChangeType, onIgnore, onSplit }: GroupCardProps) {
+export function GroupCard({ index, group, questions, stats, reliability, onToggleReversed, score, onScore, onChangeType, onIgnore, onSplit }: GroupCardProps) {
   const types = new Set(questions.map((q) => q.type));
   const shared = types.size === 1 ? questions[0].type : '';
   return (
@@ -332,7 +336,50 @@ export function GroupCard({ index, group, questions, stats, reliability, onToggl
       </header>
       <p className="card-meta">题组 · {questions.length} 个子项，分别统计</p>
       <GroupBody questions={questions} stats={stats} reliability={reliability} onToggleReversed={onToggleReversed} />
+      {score && onScore && <ScoreControls score={score} onScore={onScore} />}
     </article>
+  );
+}
+
+// 题组卡片底部的维度得分一行：生成、选缺失规则、移除；不能生成时写明原因。
+function ScoreControls({ score, onScore }: { score: ScoreState; onScore: (groupId: string, missing: ScoreMissing | null) => void }) {
+  const remove = (
+    <button className="btn small ghost" onClick={() => onScore(score.group.id, null)}>
+      移除得分
+    </button>
+  );
+  return (
+    <div className="score-row">
+      <b>维度得分</b>
+      {score.blocker ? (
+        <>
+          <span className="hint">无法生成：{score.blocker}。</span>
+          {score.missing && remove}
+        </>
+      ) : score.missing ? (
+        <>
+          <label className="inline">
+            缺失规则
+            <select value={score.missing} onChange={(e) => onScore(score.group.id, e.target.value as ScoreMissing)}>
+              {(Object.keys(SCORE_MISSING_LABELS) as ScoreMissing[]).map((rule) => (
+                <option key={rule} value={rule}>
+                  {SCORE_MISSING_LABELS[rule]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="hint">得分卡片在题组后面，像一道数值题。</span>
+          {remove}
+        </>
+      ) : (
+        <>
+          <button className="btn small" onClick={() => onScore(score.group.id, 'complete')}>
+            生成维度得分
+          </button>
+          <span className="hint">各子题的均值，反向题先翻转。</span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -478,10 +525,14 @@ interface CardProps {
   onChangeType: (type: QuestionType) => void;
   onIgnore: () => void;
   onMerge?: () => void;
+  // 派生题目（维度得分）：题型固定，不能忽略和合并，只能移除；note 是口径说明。
+  locked?: boolean;
+  onRemove?: () => void;
+  note?: string;
   children?: ReactNode;
 }
 
-export function QuestionCard({ index, question, stat, onChangeType, onIgnore, onMerge, children }: CardProps) {
+export function QuestionCard({ index, question, stat, onChangeType, onIgnore, onMerge, locked, onRemove, note, children }: CardProps) {
   return (
     <article className="card" id={`card-${index}`}>
       <header className="card-head">
@@ -490,29 +541,42 @@ export function QuestionCard({ index, question, stat, onChangeType, onIgnore, on
           {question.title}
         </h3>
         <div className="card-tools">
-          <label className="sr-only" htmlFor={`type-${index}`}>
-            {question.title} 的题型
-          </label>
-          <select id={`type-${index}`} value={question.type} onChange={(e) => onChangeType(e.target.value as QuestionType)}>
-            {QUESTION_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          {onMerge && (
-            <button className="btn small ghost" onClick={onMerge}>
-              合并
+          {locked ? (
+            <span className="tag">维度得分</span>
+          ) : (
+            <>
+              <label className="sr-only" htmlFor={`type-${index}`}>
+                {question.title} 的题型
+              </label>
+              <select id={`type-${index}`} value={question.type} onChange={(e) => onChangeType(e.target.value as QuestionType)}>
+                {QUESTION_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+              {onMerge && (
+                <button className="btn small ghost" onClick={onMerge}>
+                  合并
+                </button>
+              )}
+              <button className="btn small ghost" onClick={onIgnore}>
+                忽略
+              </button>
+            </>
+          )}
+          {onRemove && (
+            <button className="btn small ghost" onClick={onRemove}>
+              移除
             </button>
           )}
-          <button className="btn small ghost" onClick={onIgnore}>
-            忽略
-          </button>
         </div>
       </header>
       <p className="card-meta">
-        {TYPE_LABELS[question.type]} · 有效回答 {stat.n} 条{stat.missing > 0 ? ` · 缺失 ${stat.missing}` : ''}
+        {TYPE_LABELS[question.type]} · {locked ? `有效得分 ${stat.n} 条` : `有效回答 ${stat.n} 条`}
+        {stat.missing > 0 ? ` · ${locked ? '没有得分' : '缺失'} ${stat.missing} 份` : ''}
       </p>
+      {note && <p className="card-note">{note}</p>}
       <QuestionBody stat={stat} />
       {children}
     </article>

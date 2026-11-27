@@ -265,6 +265,6 @@ export function buildFindings(rows: Record<string, string>[], questions: Questio
 
 // rows 传计入分析的问卷；不传就是全部行。
 export function validRowCount(dataset: Dataset, rows: Record<string, string>[] = dataset.rows) {
-  const included = dataset.questions.filter((q) => q.included);
+  const included = dataset.questions.filter((q) => q.included && !q.derived);
   return rows.filter((r) => included.some((q) => isAnswer(r[q.id]))).length;
 }

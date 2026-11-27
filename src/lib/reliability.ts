@@ -82,7 +82,7 @@ function sumOfOthers(cols: number[][], j: number): number[] {
 }
 
 // 各题的取值范围要能对得上：单道题可能恰好没人选端点，所以允许每边超出公共部分一级。
-function rangesConsistent(columns: (number | null)[][]): boolean {
+export function scaleConsistent(columns: (number | null)[][]): boolean {
   const spans: { lo: number; hi: number }[] = [];
   for (const col of columns) {
     let lo = Infinity;
@@ -130,7 +130,7 @@ export function reliability(items: Question[], rows: Record<string, string>[]): 
   let note: string | null = null;
   if (!range) note = '这些题没有有效回答';
   else if (n < 2) note = '完整作答不足 2 份';
-  else if (!rangesConsistent(columns)) note = '各题取值范围不一致，无法计算信度';
+  else if (!scaleConsistent(columns)) note = '各题取值范围不一致，无法计算信度';
   else {
     alpha = cronbachAlpha(cols);
     if (alpha === null) note = '取值没有变化，无法计算信度';

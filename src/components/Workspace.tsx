@@ -5,6 +5,9 @@ import { computeStat, validRowCount } from '../lib/stats.ts';
 import type { Stat } from '../lib/stats.ts';
 import type { Reliability } from '../lib/reliability.ts';
 import type { CleaningSummary } from '../lib/cleaning.ts';
+import { scoreNote } from '../lib/scores.ts';
+import type { ScoreState } from '../lib/scores.ts';
+import type { ScoreMissing } from '../types.ts';
 import { includedItems } from '../lib/groups.ts';
 import { FileDrop } from './Home.tsx';
 import { GroupCard, OpenText, QuestionCard } from './QuestionView.tsx';
@@ -31,9 +34,11 @@ interface WorkspaceProps {
   rows: Record<string, string>[];
   cleaning: CleaningSummary | null;
   onOpenCleaning: () => void;
+  scoreStates: ScoreState[];
+  onScore: (groupId: string, missing: ScoreMissing | null) => void;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed, rows, cleaning, onOpenCleaning }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed, rows, cleaning, onOpenCleaning, scoreStates, onScore }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
@@ -179,6 +184,8 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 onChangeType={(type) => item.questions.forEach((q) => onChangeType(q.id, type))}
                 onIgnore={() => onToggle(item.questions[0].id)}
                 onSplit={() => onSplitGroup(item.group.id)}
+                score={scoreStates.find((s) => s.group.id === item.group.id)}
+                onScore={onScore}
               />
             ) : (
               <QuestionCard
@@ -186,9 +193,12 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 index={i}
                 question={item.question}
                 stat={stats[item.question.id] ?? computeStat(item.question, rows)}
+                locked={!!item.question.derived}
+                onRemove={item.question.derived ? () => onScore(item.question.derived!.groupId, null) : undefined}
+                note={item.question.derived ? scoreNote(item.question, dataset) : undefined}
                 onChangeType={(type) => onChangeType(item.question.id, type)}
                 onIgnore={() => onToggle(item.question.id)}
-                onMerge={() => setMergeFrom(item.question)}
+                onMerge={item.question.derived ? undefined : () => setMergeFrom(item.question)}
               >
                 {item.question.type === 'open' && (
                   <OpenText question={item.question} stat={stats[item.question.id]} result={aiResults[item.question.id]} hasKey={hasKey} onOpenSettings={onOpenSettings} onRun={onRun} />
@@ -204,7 +214,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
         <Modal title="合并为题组" onClose={() => setMergeFrom(null)}>
           <MergeForm
             source={mergeFrom}
-            candidates={included.filter((q) => q.id !== mergeFrom.id)}
+            candidates={included.filter((q) => q.id !== mergeFrom.id && !q.derived)}
             onCancel={() => setMergeFrom(null)}
             onConfirm={(ids, name) => {
               onMergeQuestions(ids, name);

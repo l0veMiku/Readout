@@ -10,6 +10,7 @@ import type { Comparison } from '../lib/compare.ts';
 import type { Reliability } from '../lib/reliability.ts';
 import { cleaningSentence } from '../lib/cleaning.ts';
 import type { CleaningSummary } from '../lib/cleaning.ts';
+import { scoreNote } from '../lib/scores.ts';
 
 interface ReportProps {
   comparison: Comparison | null;
@@ -33,6 +34,12 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
     if (members.length === 0 || !range) return [];
     const flip = range.min + range.max;
     return [`题组「${g.title}」的${members.map((q) => `「${q.subTitle ?? q.title}」`).join('')}按 ${Number.isInteger(flip) ? flip : flip.toFixed(2)} 减原始分翻转（取值范围 ${range.min}–${range.max}）`];
+  });
+  // 维度得分：报告里写明每个得分的口径和没有得分的份数。
+  const scores = includedItems(dataset).flatMap((item) => {
+    if (item.kind !== 'question' || !item.question.derived) return [];
+    const stat = stats[item.question.id];
+    return [{ note: scoreNote(item.question, dataset), missing: stat?.missing ?? 0 }];
   });
   const usedAI = included.filter((q) => q.type === 'open' && aiResults[q.id]);
   const models = [...new Set(usedAI.map((q) => aiResults[q.id].model))];
@@ -118,8 +125,14 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
                   <h3>
                     <span className="qno">{i + 1}</span>
                     {q.title}
-                    <span className="tag">{TYPE_LABELS[q.type]}</span>
+                    <span className="tag">{q.derived ? '维度得分' : TYPE_LABELS[q.type]}</span>
                   </h3>
+                  {q.derived && (
+                    <p className="r-note">
+                      {scoreNote(q, dataset)}
+                      {stat.missing > 0 ? `其中 ${stat.missing} 份没有得分。` : ''}
+                    </p>
+                  )}
                   {stat.n === 0 ? (
                     <p className="empty">这道题没有有效回答。</p>
                   ) : (
@@ -194,6 +207,15 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
           <dd>均值、中位数、样本标准差（n−1）、Top-2 占比（最高两个量表点的占比）。文本量表（如非常不符合…非常符合）按常见顺序赋 1–5 分计算均值和区间，档位名称保持原文。</dd>
           <dt>数值</dt>
           <dd>均值、中位数、最小值、最大值；直方图按整齐步长分箱。</dd>
+          {scores.length > 0 && (
+            <>
+              <dt>维度得分</dt>
+              <dd>
+                维度得分是题组各量表子题的均值，反向题按题组的翻转范围折回去后参与计算，按数值题统计。
+                {scores.map((s) => `${s.note}${s.missing > 0 ? `其中 ${s.missing} 份没有得分。` : ''}`).join('')}
+              </dd>
+            </>
+          )}
           <dt>开放题</dt>
           <dd>统计有效回答数和平均字数。
             {usedAI.length > 0

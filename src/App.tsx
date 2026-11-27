@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Brand, Home } from './components/Home.tsx';
 import { Workspace } from './components/Workspace.tsx';
 import { Report } from './components/Report.tsx';
-import { ComparePage, comparisonFor, pickStillValid } from './components/Compare.tsx';
+import { ComparePage, comparisonFor, isGroupQuestion, pickStillValid } from './components/Compare.tsx';
 import type { ComparisonPick } from './components/Compare.tsx';
 import { withMedianIntervals } from './lib/compare.ts';
 import type { Comparison } from './lib/compare.ts';
@@ -19,11 +19,13 @@ import { reliability } from './lib/reliability.ts';
 import type { Reliability } from './lib/reliability.ts';
 import { analysisRows, cleaningSummary } from './lib/cleaning.ts';
 import type { CleaningSummary } from './lib/cleaning.ts';
+import { scoreStates, setScore, withScores } from './lib/scores.ts';
+import type { ScoreState } from './lib/scores.ts';
 import { bootstrapPool } from './lib/bootstrapPool.ts';
 import { mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
-import type { AIResult, Cleaning, Dataset, Question, QuestionType } from './types.ts';
+import type { AIResult, Cleaning, Dataset, Question, QuestionType, ScoreMissing } from './types.ts';
 
 type View = 'home' | 'workspace' | 'compare' | 'report';
 
@@ -68,14 +70,6 @@ export default function App() {
     else location.hash = hash;
   };
 
-  // 分组题被改成其他题型或忽略后，交叉分析的选择随之作废。
-  useEffect(() => {
-    if (dataset && pick && !pickStillValid(dataset, pick)) {
-      setPick(null);
-      setPickNotice('分组题须为未被忽略的单选题，交叉分析已清空。');
-    }
-  }, [dataset, pick]);
-
   const adopt = (ds: Dataset, name: string) => {
     setDataset(ds);
     setPick(null);
@@ -100,17 +94,54 @@ export default function App() {
 
   // 计入分析的问卷。没有清洗设置时就是 dataset.rows 本身；原始行、清洗设置和纳入的题都没变时沿用同一个数组，统计缓存才用得上。
   const includedKey = dataset ? dataset.questions.filter((q) => q.included).map((q) => q.id).join(' ') : '';
-  const rows = useMemo(() => (dataset ? analysisRows(dataset) : []), [dataset?.rows, dataset?.cleaning, includedKey]);
+  const baseRows = useMemo(() => (dataset ? analysisRows(dataset) : []), [dataset?.rows, dataset?.cleaning, includedKey]);
+  // 维度得分：题目和每一行的得分都在这里算出来，不写回原始数据。定义没变时沿用同一份状态，带得分列的行才不会换新。
+  const scoreRef = useRef<{ rows: Record<string, string>[]; states: ScoreState[] }>({ rows: [], states: [] });
+  const scoreList = useMemo(() => {
+    const next = dataset ? scoreStates(dataset, baseRows) : [];
+    const prev = scoreRef.current;
+    const same =
+      prev.rows === baseRows &&
+      prev.states.length === next.length &&
+      prev.states.every((p, i) => p.group === next[i].group && p.missing === next[i].missing && p.question === next[i].question);
+    const states = same ? prev.states : next;
+    scoreRef.current = { rows: baseRows, states };
+    return states;
+  }, [dataset, baseRows]);
+  const scoredRows = useMemo(() => withScores(baseRows, scoreList), [baseRows, scoreList]);
+  // 分析用的数据集：维度得分作为一道数值题，紧跟在它的题组后面。
+  const analysis = useMemo(() => {
+    const derived = new Map(scoreList.flatMap((s) => (s.question && s.missing ? [[s.group.id, s.question] as [string, Question]] : [])));
+    if (!dataset || derived.size === 0) return dataset;
+    const lastMember = new Map<string, number>();
+    dataset.questions.forEach((q, i) => {
+      if (q.groupId && derived.has(q.groupId)) lastMember.set(q.groupId, i);
+    });
+    const questions: Question[] = [];
+    dataset.questions.forEach((q, i) => {
+      questions.push(q);
+      if (q.groupId && lastMember.get(q.groupId) === i) questions.push(derived.get(q.groupId)!);
+    });
+    return { ...dataset, questions };
+  }, [dataset, scoreList]);
+  // 分组题被改成其他题型或忽略后，交叉分析的选择随之作废；对比题被忽略或得分被移除时也一样。
+  useEffect(() => {
+    if (!analysis || !pick || pickStillValid(analysis, pick)) return;
+    setPick(null);
+    setPickNotice(isGroupQuestion(analysis.questions.find((q) => q.id === pick.group)) ? '对比题不可用了（被忽略、改了题型或移除了得分），交叉分析已清空。' : '分组题须为未被忽略的单选题，交叉分析已清空。');
+  }, [analysis, pick]);
   const stats = useMemo(() => {
     const map: Record<string, Stat> = {};
-    if (!dataset) return map;
-    let cache = statCache.current.get(rows);
-    if (!cache) {
-      cache = new WeakMap();
-      statCache.current.set(rows, cache);
-    }
-    for (const q of dataset.questions) {
+    if (!analysis) return map;
+    for (const q of analysis.questions) {
       if (!q.included) continue;
+      // 普通题目读原始行，得分题目读带得分列的行；两组行的身份各自稳定，缓存互不干扰。
+      const rows = q.derived ? scoredRows : baseRows;
+      let cache = statCache.current.get(rows);
+      if (!cache) {
+        cache = new WeakMap();
+        statCache.current.set(rows, cache);
+      }
       let stat = cache.get(q);
       if (!stat) {
         stat = computeStat(q, rows, { deferBootstrap: true });
@@ -119,15 +150,14 @@ export default function App() {
       map[q.id] = stat;
     }
     return map;
-  }, [dataset, bootTick]);
+  }, [analysis, scoredRows, baseRows, bootTick]);
   // 首屏不等重抽样：点估计和直方图先渲染，再把缺区间的数值题交给后台线程。
   useEffect(() => {
-    if (!dataset) return;
-    const cache = statCache.current.get(rows);
-    if (!cache) return;
-    for (const q of dataset.questions) {
-      const stat = cache.get(q);
+    if (!analysis) return;
+    for (const q of analysis.questions) {
+      const stat = stats[q.id];
       if (!stat || stat.kind !== 'numeric' || !stat.ciPending || booting.current.has(q)) continue;
+      const rows = q.derived ? scoredRows : baseRows;
       booting.current.add(q);
       bootstrapPool.run(numericSamples(q, rows), (boot) => {
         booting.current.delete(q);
@@ -136,9 +166,9 @@ export default function App() {
         setBootTick((t) => t + 1);
       });
     }
-  }, [dataset, rows]);
+  }, [analysis, stats, scoredRows, baseRows]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
-  const baseComparison = useMemo(() => (dataset ? comparisonFor(dataset, pick, rows) : null), [dataset, pick, rows]);
+  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows) : null), [analysis, pick, scoredRows]);
   const [medianCis, setMedianCis] = useState<{ for: Comparison; done: (Interval | null | undefined)[] } | null>(null);
   const comparing = useRef(new WeakSet<Comparison>());
   const currentComparison = useRef(baseComparison);
@@ -171,14 +201,14 @@ export default function App() {
     const settled = medianCis?.for === baseComparison ? medianCis.done.filter((ci) => ci !== undefined).length : 0;
     return questions + groups - settled;
   }, [stats, baseComparison, medianCis]);
-  const findings = useMemo(() => (dataset ? buildFindings(rows, dataset.questions, stats) : []), [dataset, rows, stats]);
+  const findings = useMemo(() => (analysis ? buildFindings(baseRows, analysis.questions, stats) : []), [analysis, baseRows, stats]);
   // 题组的信度：有两道以上量表子题时才有结果。反向标记一变，题目对象换新，这里跟着重算。
   const reliabilities = useMemo(() => {
     const map: Record<string, Reliability | null> = {};
     if (!dataset) return map;
-    for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), rows);
+    for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), baseRows);
     return map;
-  }, [dataset, rows]);
+  }, [dataset, baseRows]);
   const cleaning = useMemo<CleaningSummary | null>(() => (dataset ? cleaningSummary(dataset) : null), [dataset]);
   const applyCleaning = (next: Cleaning | undefined) => setDataset((d) => (d ? { ...d, cleaning: next } : d));
 
@@ -199,11 +229,12 @@ export default function App() {
   const mergeIntoGroup = (ids: string[], groupTitle: string) => setDataset((d) => (d ? mergeQuestions(d, ids, groupTitle) : d));
   const split = (groupId: string) => setDataset((d) => (d ? splitGroup(d, groupId) : d));
   const reverse = (id: string) => setDataset((d) => (d ? toggleReversed(d, id) : d));
+  const score = (groupId: string, missing: ScoreMissing | null) => setDataset((d) => (d ? setScore(d, groupId, missing) : d));
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
     const snapshot = dataset;
-    const valid = answersOf(q, rows).valid;
+    const valid = answersOf(q, baseRows).valid;
     const result = await summarizeOpenQuestion(currentConfig(), q.title, valid);
     // 期间换了文件或改了清洗设置，就不要把结果写到新数据上；只调整题型不影响同一列的归纳结果。
     if (latest.current?.rows === snapshot.rows && latest.current?.cleaning === snapshot.cleaning) setAiResults((r) => ({ ...r, [q.id]: result }));
@@ -253,9 +284,9 @@ export default function App() {
       ) : null}
 
       <ErrorBoundary key={`${view}:${dataset?.importedAt ?? ''}`}>
-        {showWorkspace && dataset ? (
+        {showWorkspace && analysis ? (
           <Workspace
-            dataset={dataset}
+            dataset={analysis}
             stats={stats}
             findings={findings}
             title={title}
@@ -272,13 +303,15 @@ export default function App() {
             onRun={runAI}
             reliabilities={reliabilities}
             onToggleReversed={reverse}
-            rows={rows}
+            rows={baseRows}
+            scoreStates={scoreList}
+            onScore={score}
             cleaning={cleaning}
             onOpenCleaning={() => setCleaningOpen(true)}
           />
-        ) : showCompare && dataset ? (
+        ) : showCompare && analysis ? (
           <ComparePage
-            dataset={dataset}
+            dataset={analysis}
             pick={pick}
             notice={pickNotice}
             onSelect={(next) => {
@@ -287,10 +320,10 @@ export default function App() {
             }}
             comparison={comparison}
           />
-        ) : showReport && dataset ? (
+        ) : showReport && analysis ? (
           <div className="report-wrap">
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
-            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} rows={rows} cleaning={cleaning} />
+            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

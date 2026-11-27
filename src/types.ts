@@ -21,6 +21,8 @@ export interface Question {
   subTitle?: string;
   // 反向计分题：只影响题组的信度计算，各题自己的统计照旧按原始作答。
   reversed?: boolean;
+  // 派生题目：由题组的子项算出来，不对应文件里的列。
+  derived?: { kind: 'score'; groupId: string };
 }
 
 export interface QuestionGroup {
@@ -48,6 +50,9 @@ export interface Cleaning {
   overrides: Record<number, 'keep' | 'drop'>;
 }
 
+// 维度得分的缺失规则：complete 要求全部子项有作答；partial80 要求至少 80% 的子项有作答。
+export type ScoreMissing = 'complete' | 'partial80';
+
 export interface Dataset {
   fileName: string;
   importedAt: string;
@@ -60,6 +65,8 @@ export interface Dataset {
   groups: QuestionGroup[];
   // 没有清洗设置时不存在，所有问卷都计入分析。
   cleaning?: Cleaning;
+  // 哪些题组生成了维度得分，以及各自的缺失规则；没有生成时不存在。
+  scores?: Record<string, ScoreMissing>;
 }
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'mixed';

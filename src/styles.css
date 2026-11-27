@@ -863,6 +863,30 @@ button {
   white-space: nowrap;
 }
 
+.score-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: 13.5px;
+}
+
+.score-row select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 5px 10px;
+}
+
+.card-note {
+  margin: 0 0 10px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
 .merge-list {
   max-height: 260px;
   overflow: auto;
