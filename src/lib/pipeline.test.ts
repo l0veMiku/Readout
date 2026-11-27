@@ -7,6 +7,8 @@ import { buildDataset, decodeText, parseGrid, parseWorkbook } from './parse.ts';
 import { buildFindings, computeStat, numericSamples, sampleNote, withBootstrap } from './stats.ts';
 import { bootstrapIntervals } from './intervals.ts';
 import { includedItems, mergeQuestions, splitGroup, toggleIncluded } from './groups.ts';
+import { durationInfo, evaluateCleaning, newRule } from './cleaning.ts';
+import { reliability } from './reliability.ts';
 
 function demoDataset() {
   const text: string = readFileSync(new URL('../../public/demo-survey.csv', import.meta.url), 'utf8');
@@ -18,16 +20,27 @@ test('demo survey: every question type is inferred as designed', () => {
   const ds = demoDataset();
   assert.equal(ds.rows.length, 128);
   assert.deepEqual(ds.questions.map((q) => q.type), [
-    'meta', 'meta', 'single', 'single', 'single', 'single', 'multi', 'multi',
+    'meta', 'meta', 'meta', 'single', 'single', 'single', 'single', 'multi', 'multi',
     'scale', 'scale', 'numeric', 'numeric', 'open', 'multi', 'open',
     'scale', 'scale', 'scale',
   ]);
-  assert.equal(ds.questions[2].title, '您的年级是？');
-  assert.equal(ds.questions[6].title, '您使用过哪些 AI 工具？');
+  assert.equal(ds.questions[3].title, '您的年级是？');
+  assert.equal(ds.questions[7].title, '您使用过哪些 AI 工具？');
   assert.equal(ds.questions.filter((q) => q.included).length, 16);
   assert.equal(ds.groups.length, 1);
   assert.equal(ds.groups[0].title, '第14题');
   assert.equal(ds.questions.filter((q) => q.groupId).length, 3);
+});
+
+test('demo data shows a usable reliability and a few careless responses', () => {
+  const ds = demoDataset();
+  const r = reliability(ds.questions.filter((q) => q.groupId), ds.rows)!;
+  assert.ok(r.alpha !== null && r.alpha > 0.7 && r.alpha < 0.9, `demo alpha ${r.alpha}`);
+  assert.ok(r.items.every((it) => it.citc !== null && it.citc > 0.3), 'no item correlates negatively with the rest');
+  assert.equal(durationInfo(ds)!.unreadable, 0);
+  const fast = { ...newRule('duration'), maxSeconds: 60 };
+  const hits = evaluateCleaning({ ...ds, cleaning: { rules: [fast], includeFlagged: true, overrides: {} } }).counts[fast.id];
+  assert.ok(hits >= 4 && hits <= 12, `${hits} responses under a minute`);
 });
 
 test('multi-select splits on separators and counts people, not ticks', () => {
@@ -89,12 +102,12 @@ test('findings name the option with the most answers and mix question kinds', ()
   assert.ok(findings.every((f) => f.endsWith('。')));
   assert.ok(findings.some((f) => f.includes('平均')), 'scale or numeric findings are present');
   assert.ok(findings.some((f) => f.includes('里选择最多')), 'multi-select findings are present');
-  const topTool = computeStat(ds.questions[6], ds.rows);
+  const topTool = computeStat(ds.questions[7], ds.rows);
   if (topTool.kind === 'multi') {
-    const text = findings.find((f) => f.includes(ds.questions[6].title));
+    const text = findings.find((f) => f.includes(ds.questions[7].title));
     assert.ok(text?.includes(`「${topTool.options[0].name}」`));
   }
-  const least = computeStat(ds.questions[2], ds.rows);
+  const least = computeStat(ds.questions[3], ds.rows);
   if (least.kind === 'single') assert.ok(least.options.every((o, i, a) => i === 0 || a[i - 1].count >= o.count));
 });
 

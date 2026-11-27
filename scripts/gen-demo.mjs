@@ -32,6 +32,8 @@ function subset(pairs, max) {
   const list = chosen.length ? chosen : [pairs[0]];
   return [...list].sort(() => rand() - 0.5).slice(0, max).map(([v]) => v).join('┋');
 }
+// 均值 0、标准差约 1 的近似正态：三个均匀分布相加再放大。
+const normal = () => (rand() + rand() + rand() - 1.5) * 2;
 const pad = (n) => String(n).padStart(2, '0');
 const cell = (v) => {
   const s = String(v);
@@ -58,7 +60,6 @@ const uses = [
 ];
 const help = [[1, 2], [2, 5], [3, 27], [4, 49], [5, 45]];
 const acc = [[1, 6], [2, 17], [3, 44], [4, 47], [5, 14]];
-const effect = [[1, 5], [2, 14], [3, 34], [4, 50], [5, 25]];
 const courses = [
   ['使用技巧入门', 0.5], ['提示词写法', 0.45], ['结合专业课的案例', 0.52], ['AI 伦理与学术规范', 0.41],
   ['编程与自动化', 0.3], ['不需要这类课程', 0.05],
@@ -116,10 +117,17 @@ for (let i = 1; i <= N; i++) {
   const month = pick(['10', '10', '10', '11']);
   const day = pad(1 + Math.floor(rand() * 25));
   const time = `2026/${month}/${day} ${pad(Math.floor(rand() * 24))}:${pad(Math.floor(rand() * 60))}:${pad(Math.floor(rand() * 60))}`;
+  // 每 19 份里有一份敷衍作答：时间很短，题组里全选 3。
+  const careless = i % 19 === 0;
+  const seconds = careless ? 25 + Math.floor(rand() * 30) : Math.round(230 + normal() * 70);
+  // 题组的三个子项由一个共同的潜在因子生成，彼此相关，α 在 0.8 左右。
+  const factor = normal();
+  const effect = (loading) => String(Math.min(5, Math.max(1, Math.round(3.4 + loading * factor + 0.7 * normal()))));
 
   rows.push([
     i,
     time,
+    seconds,
     weighted(grade),
     weighted(gender),
     weighted(major),
@@ -133,15 +141,16 @@ for (let i = 1; i <= N; i++) {
     rand() < 0.06 ? '-' : pick(problems),
     subset(courses, 6),
     rand() < 0.35 ? '' : pick(suggestions),
-    weighted(effect),
-    weighted(effect),
-    weighted(effect),
+    careless ? '3' : effect(0.9),
+    careless ? '3' : effect(0.85),
+    careless ? '3' : effect(0.8),
   ]);
 }
 
 const header = [
   '序号',
   '提交答卷时间',
+  '答题时长',
   '1、您的年级是？',
   '2、您的性别是？',
   '3、您的专业类别是？',
