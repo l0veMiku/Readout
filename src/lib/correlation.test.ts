@@ -100,6 +100,7 @@ test('the correlation uses the paired sample and the sentence names the stronges
   assert.equal(corr.variables.length, 2);
   assert.equal(corr.pairs.length, 1);
   assert.equal(corr.pairs[0].n, 4);
+  assert.deepEqual(corr.counts, [5, 4]);
   assert.match(corr.sentence, /2 个变量两两相关，共 1 对/);
   assert.match(corr.sentence, /最强的一对是「每周时长」和「满意度」（r = 1.00，95% 区间 1.00–1.00，n = 4）/);
 });

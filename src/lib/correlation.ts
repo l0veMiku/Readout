@@ -22,6 +22,8 @@ export interface CorrPair {
 
 export interface Correlation {
   variables: Question[];
+  // 每个变量自己的有效取值数，矩阵对角线用。
+  counts: number[];
   pairs: CorrPair[];
   sentence: string;
 }
@@ -109,5 +111,5 @@ export function correlationFor(dataset: { questions: Question[] }, ids: string[]
   } else {
     sentence += '没有一对能算出系数。';
   }
-  return { variables, pairs, sentence };
+  return { variables, counts: values.map((v) => v.filter((x) => x !== null).length), pairs, sentence };
 }

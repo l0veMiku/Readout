@@ -342,7 +342,7 @@ export default function App() {
             comparison={comparison}
           />
         ) : showCorrelation && analysis ? (
-          <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} corr={corr} />
+          <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} />
         ) : showReport && analysis ? (
           <div className="report-wrap">
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
