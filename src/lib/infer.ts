@@ -122,10 +122,11 @@ export function inferType(rawTitle: string, values: string[], opts: { grouped?: 
 
   // 表头写明的题型优先于按取值猜测。
   if (MULTI_HINT.test(raw) || MULTI_HINT.test(title)) return 'multi';
-  if (SINGLE_HINT.test(raw) || SINGLE_HINT.test(title)) return 'single';
   if (SCALE_MARK.test(raw) || SCALE_MARK.test(title)) return 'scale';
 
   if (isLikert(valid)) return 'scale';
+  // 「单选」标记只压过关键词、分隔符这类猜测；档位本身就是量表时仍按量表算。
+  if (SINGLE_HINT.test(raw) || SINGLE_HINT.test(title)) return 'single';
   if (STRONG_OPEN.test(title) && (distinct.size > 20 || avgLen >= 4)) return 'open';
   if (multiLike(valid)) return 'multi';
   if (OPEN_HINT.test(title) && (distinct.size > 20 || avgLen >= 4)) return 'open';

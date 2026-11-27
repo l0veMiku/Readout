@@ -240,6 +240,15 @@ test('explicit type markers beat keyword heuristics, and open text keeps its sem
   assert.equal(inferType('您选修了哪些课程？', rep(['高数；线代', '线代；概率论', '高数；概率论'])), 'multi');
 });
 
+test('a Likert scale stays a scale when the platform marks the header as single choice', () => {
+  const rep = (xs: string[]) => Array.from({ length: 30 }, (_, i) => xs[i % xs.length]);
+  const satisfaction = ['非常满意', '满意', '一般', '不满意', '非常满意'];
+  assert.equal(inferType('您对本课程的满意度（单选）', rep(satisfaction)), 'scale');
+  assert.equal(inferType('您是否同意以下说法（单选）', rep(['非常同意', '同意', '一般', '不同意', '非常同意'])), 'scale');
+  assert.equal(inferType('您对食堂的满意度【单选题】', rep(satisfaction)), 'scale');
+  assert.equal(inferType('3、性别（单选）', rep(['1', '2'])), 'single');
+});
+
 test('bare channel, city, region and total-score headers are real questions, not metadata', () => {
   const rep = (xs: string[]) => Array.from({ length: 30 }, (_, i) => xs[i % xs.length]);
   assert.equal(inferType('渠道', rep(['微信', '朋友推荐', '搜索引擎'])), 'single');
