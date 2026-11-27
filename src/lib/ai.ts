@@ -189,7 +189,7 @@ export async function testConnection(config: AIConfig) {
 export async function summarizeOpenQuestion(config: AIConfig, title: string, valid: string[]): Promise<AIResult> {
   if (valid.length === 0) throw new AIError('这道题还没有有效回答。');
   const { sample, sampled } = sampleAnswers(valid);
-  const text = await chat(config, buildMessages(title, sample), 2000);
+  const text = await chat(config, buildMessages(title, sample), 4096) || await chat(config, buildMessages(title, sample), 8192);
   const { summary, themes } = parseThemes(text, sample);
   return {
     summary,
