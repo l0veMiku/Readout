@@ -207,6 +207,9 @@ export interface Comparison {
   rows: CompareRow[];
   test: TestResult | null;
   sentence: string;
+  // 只在 deferBootstrap 且对比题是数值题时存在：各组待重抽样的取值，以及「区间还没到」的标记。
+  medianSamples?: number[][];
+  medianPending?: boolean;
 }
 
 type Amount = (x: number) => string;
@@ -225,7 +228,24 @@ function phrases(groups: CompareGroup[], diffs: (Diff | null)[], unit: string, a
 
 const pctPoints: Amount = (x) => formatNumber(x * 100, 1);
 
-export function compareQuestions(group: Question, compare: Question, rows: Record<string, string>[]): Comparison | null {
+// 把后台算好的各组中位数区间并回 compareQuestions(..., { deferBootstrap: true }) 的结果。
+// intervals 里尚未到达的组用 undefined 表示；全部到齐后返回的对象与同步计算的结果完全相同。
+export function withMedianIntervals(comparison: Comparison, intervals: (Interval | null | undefined)[]): Comparison {
+  if (!comparison.medianPending) return comparison;
+  const merged: Comparison = {
+    ...comparison,
+    rows: comparison.rows.map((row) => ({
+      ...row,
+      cells: row.cells.map((cell, gi) => (cell.kind === 'mean' ? { ...cell, medianCI: intervals[gi] ?? null } : cell)),
+    })),
+  };
+  if (intervals.some((ci) => ci === undefined)) return merged;
+  delete merged.medianPending;
+  delete merged.medianSamples;
+  return merged;
+}
+
+export function compareQuestions(group: Question, compare: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean } = {}): Comparison | null {
   if (!canCompare(group, compare)) return null;
   const picked = rows.filter((r) => isAnswer(r[group.id]) && isAnswer(r[compare.id]));
   const counts = new Map<string, number>();
@@ -268,7 +288,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
       mean: mean(xs),
       meanCI: meanInterval(xs),
       median: numeric ? median(xs) : null,
-      medianCI: numeric ? bootstrapIntervals(xs).median : null,
+      medianCI: numeric && !opts.deferBootstrap ? bootstrapIntervals(xs).median : null,
     }));
     const diffs = perGroup.slice(1).map((xs) => welchDiff(xs, perGroup[0]));
     const amount: Amount = (x) => formatNumber(x, 2);
@@ -281,6 +301,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
       mode: 'mean',
       rows: [{ name: '均值', cells, diffs, test: null, sentence: parts.length ? `${parts.join('；')}。` : '无法比较各组均值。' }],
       sentence,
+      ...(numeric && opts.deferBootstrap ? { medianSamples: perGroup, medianPending: true } : {}),
     };
   }
 

@@ -4,6 +4,9 @@ import { Workspace } from './components/Workspace.tsx';
 import { Report } from './components/Report.tsx';
 import { ComparePage, comparisonFor, pickStillValid } from './components/Compare.tsx';
 import type { ComparisonPick } from './components/Compare.tsx';
+import { withMedianIntervals } from './lib/compare.ts';
+import type { Comparison } from './lib/compare.ts';
+import type { Interval } from './lib/intervals.ts';
 import { Modal } from './components/Modal.tsx';
 import { AISettings, currentConfig } from './components/AISettings.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -127,8 +130,40 @@ export default function App() {
       });
     }
   }, [dataset]);
-  const pendingIntervals = useMemo(() => Object.values(stats).filter((s) => s.kind === 'numeric' && s.ciPending).length, [stats]);
-  const comparison = useMemo(() => (dataset ? comparisonFor(dataset, pick) : null), [dataset, pick]);
+  // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
+  const baseComparison = useMemo(() => (dataset ? comparisonFor(dataset, pick) : null), [dataset, pick]);
+  const [medianCis, setMedianCis] = useState<{ for: Comparison; done: (Interval | null | undefined)[] } | null>(null);
+  const comparing = useRef(new WeakSet<Comparison>());
+  const currentComparison = useRef(baseComparison);
+  currentComparison.current = baseComparison;
+  const comparison = useMemo(
+    () => (baseComparison?.medianPending && medianCis?.for === baseComparison ? withMedianIntervals(baseComparison, medianCis.done) : baseComparison),
+    [baseComparison, medianCis],
+  );
+  useEffect(() => {
+    const base = baseComparison;
+    if (!base?.medianPending || !base.medianSamples || comparing.current.has(base)) return;
+    comparing.current.add(base);
+    const samples = base.medianSamples;
+    samples.forEach((xs, gi) => {
+      bootstrapPool.run(xs, (boot) => {
+        // 期间换了分组题或对比题：旧结果不再使用。
+        if (currentComparison.current !== base) return;
+        setMedianCis((s) => {
+          const done = s?.for === base ? [...s.done] : samples.map(() => undefined);
+          done[gi] = boot.median;
+          return { for: base, done };
+        });
+      });
+    });
+  }, [baseComparison]);
+  // 报告要等所有区间到齐才能打印：数值题每道算一处，交叉分析每组各算一处。
+  const pendingIntervals = useMemo(() => {
+    const questions = Object.values(stats).filter((s) => s.kind === 'numeric' && s.ciPending).length;
+    const groups = baseComparison?.medianSamples?.length ?? 0;
+    const settled = medianCis?.for === baseComparison ? medianCis.done.filter((ci) => ci !== undefined).length : 0;
+    return questions + groups - settled;
+  }, [stats, baseComparison, medianCis]);
   const findings = useMemo(() => (dataset ? buildFindings(dataset.rows, dataset.questions, stats) : []), [dataset, stats]);
 
   const changeType = (id: string, type: QuestionType) =>
@@ -227,10 +262,11 @@ export default function App() {
               setPickNotice('');
               setPick(next);
             }}
+            comparison={comparison}
           />
         ) : showReport && dataset ? (
           <div className="report-wrap">
-            {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 道数值题的 95% 区间在后台计算，算完后才能打印。</p>}
+            {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
             <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} />
           </div>
         ) : (

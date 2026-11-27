@@ -48,7 +48,7 @@ export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null) {
   if (!pick?.group || !pick.compare || !pickStillValid(dataset, pick)) return null;
   const g = dataset.questions.find((q) => q.id === pick.group);
   const c = dataset.questions.find((q) => q.id === pick.compare);
-  return g && c ? compareQuestions(g, c, dataset.rows) : null;
+  return g && c ? compareQuestions(g, c, dataset.rows, { deferBootstrap: true }) : null;
 }
 
 export function ComparisonBody({ comparison, inReport }: { comparison: Comparison; inReport?: boolean }) {
@@ -84,6 +84,7 @@ export function ComparisonBody({ comparison, inReport }: { comparison: Compariso
   const digits = (c: MeanCell) => ciDigits(c.mean);
   const notes = groups.filter((g) => sampleNote(g.n)).map((g) => `「${g.name}」${sampleNote(g.n)}`);
   if (multi) notes.push('各选项分别检验，未做多重比较校正。');
+  if (comparison.medianPending) notes.push('各组中位数的 95% 区间还在后台计算，算完后补上。');
   if (shown.length < groups.length) notes.push(`图中只画人数最多的 8 组，表格列出全部。`);
   if (chartRows.length < rows.length) notes.push(`图中只画人数最多的 ${chartRows.length} 个选项，表格列出全部。`);
   const tests = multi ? rows.flatMap((r) => (r.test ? [`「${r.name}」：${formatTest(r.test)}`] : [])) : comparison.test ? [formatTest(comparison.test)] : [];
@@ -167,9 +168,8 @@ export function ComparisonBody({ comparison, inReport }: { comparison: Compariso
   );
 }
 
-export function ComparePage({ dataset, pick, notice, onSelect }: { dataset: Dataset; pick: ComparisonPick | null; notice: string; onSelect: (pick: ComparisonPick) => void }) {
+export function ComparePage({ dataset, pick, notice, onSelect, comparison }: { dataset: Dataset; pick: ComparisonPick | null; notice: string; onSelect: (pick: ComparisonPick) => void; comparison: Comparison | null }) {
   const groupOptions = dataset.questions.filter((q) => q.included);
-  const comparison = useMemo(() => comparisonFor(dataset, pick), [dataset, pick]);
 
   const label = (q: Question, role: 'group' | 'compare') => {
     const tag = TYPE_LABELS[q.type];

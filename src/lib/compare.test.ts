@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
 import type { Diff } from './compare.ts';
-import { canCompare, chisqTest, compareQuestions, fisherTwoRows, formatTest, independenceTest, newcombeInterval, welchDiff } from './compare.ts';
+import { canCompare, chisqTest, compareQuestions, fisherTwoRows, formatTest, independenceTest, newcombeInterval, welchDiff, withMedianIntervals } from './compare.ts';
+import { bootstrapIntervals } from './intervals.ts';
 import { hours, welchA, welchB } from './refdata.ts';
 
 const close = (actual: number | null | undefined, expected: number, tol = 1e-9) => {
@@ -307,4 +308,32 @@ test('comparisons that cannot be made say so instead of showing numbers', () => 
   ])!;
   assert.deepEqual(same.rows[0].diffs, [null]);
   assert.match(same.sentence, /无法比较均值差别/);
+});
+
+test('a numeric comparison can defer the median intervals and equals the synchronous result once they land', () => {
+  const g = mk('g', 'single');
+  const rows = [
+    ...hours.slice(0, 150).map((v) => ({ g: '甲', c: String(v) })),
+    ...hours.slice(150).map((v) => ({ g: '乙', c: String(v) })),
+    { g: '丙', c: '' },
+  ];
+  const sync = compareQuestions(g, mk('c', 'numeric'), rows)!;
+  const first = compareQuestions(g, mk('c', 'numeric'), rows, { deferBootstrap: true })!;
+  assert.equal(first.medianPending, true);
+  assert.equal(first.medianSamples?.length, 2);
+  assert.deepEqual(
+    first.rows[0].cells.map((cell) => cell.kind === 'mean' && cell.medianCI),
+    [null, null],
+  );
+  const cis = first.medianSamples!.map((xs) => bootstrapIntervals(xs).median);
+  assert.equal(withMedianIntervals(first, [cis[0], undefined]).medianPending, true);
+  const done = withMedianIntervals(first, cis);
+  assert.equal('medianPending' in done, false);
+  assert.equal('medianSamples' in done, false);
+  assert.deepEqual(done, sync);
+  assert.equal(withMedianIntervals(done, cis), done);
+  // 量表对比没有中位数区间，延后与否结果相同。
+  const scale = compareQuestions(g, mk('c', 'scale'), rows, { deferBootstrap: true })!;
+  assert.equal('medianSamples' in scale, false);
+  assert.deepEqual(scale, compareQuestions(g, mk('c', 'scale'), rows));
 });
