@@ -69,3 +69,8 @@ export function splitGroup(dataset: Dataset, groupId: string): Dataset {
     questions: dataset.questions.map((q) => (q.groupId === groupId ? { ...q, groupId: undefined, subTitle: undefined } : q)),
   });
 }
+
+export function toggleReversed(dataset: Dataset, id: string): Dataset {
+  if (!dataset.questions.some((q) => q.id === id)) return dataset;
+  return { ...dataset, questions: dataset.questions.map((q) => (q.id === id ? { ...q, reversed: !q.reversed } : q)) };
+}

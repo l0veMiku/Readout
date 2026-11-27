@@ -7,18 +7,29 @@ import { formatDateTime } from '../lib/text.ts';
 import { GroupBody, QuestionBody, ThemeList, aiNote, sentence } from './QuestionView.tsx';
 import { ComparisonBody } from './Compare.tsx';
 import type { Comparison } from '../lib/compare.ts';
+import type { Reliability } from '../lib/reliability.ts';
 
 interface ReportProps {
   comparison: Comparison | null;
   dataset: Dataset;
   stats: Record<string, Stat>;
+  reliabilities: Record<string, Reliability | null>;
   findings: string[];
   title: string;
   aiResults: Record<string, AIResult>;
 }
 
-export function Report({ comparison, dataset, stats, findings, title, aiResults }: ReportProps) {
+export function Report({ comparison, dataset, stats, findings, title, aiResults, reliabilities }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
+  const anyReversed = dataset.questions.some((q) => q.included && q.reversed);
+  const anyReliability = Object.values(reliabilities).some((r) => r !== null && r !== undefined);
+  const reversedNotes = dataset.groups.flatMap((g) => {
+    const members = included.filter((q) => q.reversed && q.groupId === g.id);
+    const range = reliabilities[g.id]?.range;
+    if (members.length === 0 || !range) return [];
+    const flip = range.min + range.max;
+    return [`题组「${g.title}」的${members.map((q) => `「${q.subTitle ?? q.title}」`).join('')}按 ${Number.isInteger(flip) ? flip : flip.toFixed(2)} 减原始分翻转（取值范围 ${range.min}–${range.max}）`];
+  });
   const usedAI = included.filter((q) => q.type === 'open' && aiResults[q.id]);
   const models = [...new Set(usedAI.map((q) => aiResults[q.id].model))];
   const count = (t: string) => included.filter((q) => q.type === t).length;
@@ -89,7 +100,7 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults 
                 <span className="tag">题组</span>
               </h3>
               <p className="stat-line">题组共 {item.questions.length} 个子项，分别统计如下。</p>
-              <GroupBody questions={item.questions} stats={stats} />
+              <GroupBody questions={item.questions} stats={stats} reliability={reliabilities[item.group.id] ?? null} />
             </section>
           ) : (
             (() => {
@@ -158,6 +169,22 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults 
           <dd>按 ; ； | ┋ 拆分，同一人的重复选项去重；占比以人数为分母，合计可超过 100%。「其他〖补充文字〗」计入「其他」，补充文字单独列出。</dd>
           <dt>题组</dt>
           <dd>题组在报告中占一个章节，各子项分别统计；可以在工作台合并或拆分，忽略操作作用于整个题组。</dd>
+          {anyReversed && (
+            <>
+              <dt>反向计分</dt>
+              <dd>
+                被标为反向的题：{reversedNotes.length > 0 ? reversedNotes.join('；') : '无'}。翻转后的分数只用于信度计算，各题的均值和分布仍按原始作答报告。
+              </dd>
+            </>
+          )}
+          {anyReliability && (
+            <>
+              <dt>信度</dt>
+              <dd>
+                Cronbach's α 只用在题组全部量表子题上都有作答的问卷上计算，未答全的问卷不参与；校正后项总相关是该题与其余各题之和的相关，删除该项后的 α 是去掉该题后其余题的 α。α 不设合格线。
+              </dd>
+            </>
+          )}
           <dt>量表</dt>
           <dd>均值、中位数、样本标准差（n−1）、Top-2 占比（最高两个量表点的占比）。文本量表（如非常不符合…非常符合）按常见顺序赋 1–5 分计算均值和区间，档位名称保持原文。</dd>
           <dt>数值</dt>

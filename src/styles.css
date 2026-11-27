@@ -840,6 +840,29 @@ button {
   line-height: 1.6;
 }
 
+.reliability-line {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.reverse-tools {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.reverse-hint {
+  margin-left: 8px;
+  color: var(--amber);
+}
+
+.group-table th.num,
+.group-table td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .merge-list {
   max-height: 260px;
   overflow: auto;

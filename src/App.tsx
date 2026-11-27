@@ -14,8 +14,10 @@ import { parseFile } from './lib/parse.ts';
 import { buildFindings, computeStat, numericSamples, withBootstrap } from './lib/stats.ts';
 import type { Stat } from './lib/stats.ts';
 import { answersOf } from './lib/stats.ts';
+import { reliability } from './lib/reliability.ts';
+import type { Reliability } from './lib/reliability.ts';
 import { bootstrapPool } from './lib/bootstrapPool.ts';
-import { mergeQuestions, splitGroup, toggleIncluded } from './lib/groups.ts';
+import { mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
 import type { AIResult, Dataset, Question, QuestionType } from './types.ts';
@@ -165,6 +167,13 @@ export default function App() {
     return questions + groups - settled;
   }, [stats, baseComparison, medianCis]);
   const findings = useMemo(() => (dataset ? buildFindings(dataset.rows, dataset.questions, stats) : []), [dataset, stats]);
+  // 题组的信度：有两道以上量表子题时才有结果。反向标记一变，题目对象换新，这里跟着重算。
+  const reliabilities = useMemo(() => {
+    const map: Record<string, Reliability | null> = {};
+    if (!dataset) return map;
+    for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), dataset.rows);
+    return map;
+  }, [dataset]);
 
   const changeType = (id: string, type: QuestionType) =>
     setDataset((d) =>
@@ -182,6 +191,7 @@ export default function App() {
 
   const mergeIntoGroup = (ids: string[], groupTitle: string) => setDataset((d) => (d ? mergeQuestions(d, ids, groupTitle) : d));
   const split = (groupId: string) => setDataset((d) => (d ? splitGroup(d, groupId) : d));
+  const reverse = (id: string) => setDataset((d) => (d ? toggleReversed(d, id) : d));
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
@@ -252,6 +262,8 @@ export default function App() {
             hasKey={hasKey}
             onOpenSettings={() => setAiOpen(true)}
             onRun={runAI}
+            reliabilities={reliabilities}
+            onToggleReversed={reverse}
           />
         ) : showCompare && dataset ? (
           <ComparePage
@@ -267,7 +279,7 @@ export default function App() {
         ) : showReport && dataset ? (
           <div className="report-wrap">
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
-            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} />
+            <Report dataset={dataset} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

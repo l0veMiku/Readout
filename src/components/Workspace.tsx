@@ -3,6 +3,7 @@ import type { AIResult, Dataset, Question, QuestionType } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import { computeStat, validRowCount } from '../lib/stats.ts';
 import type { Stat } from '../lib/stats.ts';
+import type { Reliability } from '../lib/reliability.ts';
 import { includedItems } from '../lib/groups.ts';
 import { FileDrop } from './Home.tsx';
 import { GroupCard, OpenText, QuestionCard } from './QuestionView.tsx';
@@ -24,9 +25,11 @@ interface WorkspaceProps {
   hasKey: boolean;
   onOpenSettings: () => void;
   onRun: (q: Question) => Promise<void>;
+  reliabilities: Record<string, Reliability | null>;
+  onToggleReversed: (id: string) => void;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
@@ -163,6 +166,8 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 group={item.group}
                 questions={item.questions}
                 stats={stats}
+                reliability={reliabilities[item.group.id] ?? null}
+                onToggleReversed={onToggleReversed}
                 onChangeType={(type) => item.questions.forEach((q) => onChangeType(q.id, type))}
                 onIgnore={() => onToggle(item.questions[0].id)}
                 onSplit={() => onSplitGroup(item.group.id)}

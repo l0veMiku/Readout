@@ -19,6 +19,8 @@ export interface Question {
   included: boolean;
   groupId?: string;
   subTitle?: string;
+  // 反向计分题：只影响题组的信度计算，各题自己的统计照旧按原始作答。
+  reversed?: boolean;
 }
 
 export interface QuestionGroup {

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
 import type { OptionRow, Stat } from '../lib/stats.ts';
 import { sampleNote, withCI, withPctCI } from '../lib/stats.ts';
+import type { Reliability } from '../lib/reliability.ts';
 import { horizontalBars, meanIntervals, verticalBars } from '../lib/charts.ts';
 import { ciDigits, formatCI, formatDateTime, formatNumber, formatPct, formatPctCI } from '../lib/text.ts';
 import { QUESTION_TYPES, TYPE_LABELS } from '../types.ts';
@@ -167,13 +168,26 @@ function DistributionTable({ stat }: { stat: Stat }) {
   return null;
 }
 
-export function GroupBody({ questions, stats }: { questions: Question[]; stats: Record<string, Stat> }) {
+interface GroupBodyProps {
+  questions: Question[];
+  stats: Record<string, Stat>;
+  // 有两道以上量表子题时才有；报告里不传切换函数，只展示。
+  reliability?: Reliability | null;
+  onToggleReversed?: (id: string) => void;
+}
+
+const plain = (x: number) => String(Number.isInteger(x) ? x : x.toFixed(2));
+const three = (x: number | null) => (x === null ? '—' : x.toFixed(3));
+
+export function GroupBody({ questions, stats, reliability: rel, onToggleReversed }: GroupBodyProps) {
   const rows = questions.flatMap((q) => (stats[q.id] ? [{ q, stat: stats[q.id] }] : []));
   const means: { name: string; value: number; ci: { lower: number; upper: number } | null }[] = [];
   for (const { q, stat } of rows) {
     if ((stat.kind === 'scale' || stat.kind === 'numeric') && stat.mean !== null) means.push({ name: q.subTitle ?? q.title, value: stat.mean, ci: stat.meanCI });
   }
   const chart = means.length >= 2 ? meanIntervals(means) : null;
+  const itemResults = new Map(rel?.items.map((it) => [it.id, it]) ?? []);
+  const anyReversed = questions.some((q) => q.reversed);
   return (
     <>
       {chart && (
@@ -182,27 +196,74 @@ export function GroupBody({ questions, stats }: { questions: Question[]; stats: 
         </div>
       )}
       {rows.some(({ stat }) => sampleNote(stat.n)) && <p className="sample-note">部分子项的有效回答不足 30 条，均值和区间较宽。</p>}
+      {rel && <ReliabilityLine rel={rel} anyReversed={anyReversed} />}
       <table className="dist group-table">
         <thead>
           <tr>
             <th>子项</th>
             <th>有效回答</th>
             <th>概况</th>
+            {rel && (
+              <>
+                <th className="num">校正后项总相关</th>
+                <th className="num">删除该项后的 α</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ q, stat }) => (
-            <tr key={q.id}>
-              <td>
-                {q.subTitle ?? q.title}
-                <span className="group-type">{TYPE_LABELS[q.type]}</span>
-              </td>
-              <td>{stat.n}</td>
-              <td>{groupStatText(stat)}</td>
-            </tr>
-          ))}
+          {rows.map(({ q, stat }) => {
+            const item = itemResults.get(q.id);
+            return (
+              <tr key={q.id}>
+                <td>
+                  {q.subTitle ?? q.title}
+                  <span className="group-type">{TYPE_LABELS[q.type]}</span>
+                  {q.reversed && <span className="group-type">反向计分</span>}
+                  {item && onToggleReversed && (
+                    <span className="reverse-tools">
+                      <button className="link" onClick={() => onToggleReversed(q.id)}>
+                        {q.reversed ? '取消反向' : '标为反向'}
+                      </button>
+                      {!q.reversed && item.citc !== null && item.citc < 0 && <span className="reverse-hint">与其余题目负相关，可能是反向计分题</span>}
+                    </span>
+                  )}
+                </td>
+                <td>{stat.n}</td>
+                <td>{groupStatText(stat)}</td>
+                {rel && (
+                  <>
+                    <td className="num">{item ? three(item.citc) : '—'}</td>
+                    <td className="num">{item ? three(item.alphaIfDeleted) : '—'}</td>
+                  </>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+    </>
+  );
+}
+
+// 题组的信度一行：α、参与份数、翻转范围；算不出来时写原因。
+function ReliabilityLine({ rel, anyReversed }: { rel: Reliability; anyReversed: boolean }) {
+  const range = rel.range;
+  return (
+    <>
+      <p className="reliability-line">
+        信度：
+        {rel.alpha !== null && (
+          <>
+            Cronbach's α = <b>{rel.alpha.toFixed(3)}</b> · {rel.items.length} 道题 ·{' '}
+          </>
+        )}
+        {rel.note && `${rel.note} · `}
+        完整作答 {rel.n} 份
+        {rel.partial > 0 && `，另有 ${rel.partial} 份未答全`}
+        {anyReversed && range && ` · 翻转范围 ${plain(range.min)}–${plain(range.max)}（翻转后 = ${plain(range.min + range.max)} − 原始分）`}
+      </p>
+      {rel.alpha !== null && rel.alpha < 0 && <p className="sample-note">α 为负：通常是反向题没有标记，或者这些题不属于同一维度。</p>}
     </>
   );
 }
@@ -227,12 +288,14 @@ interface GroupCardProps {
   group: QuestionGroup;
   questions: Question[];
   stats: Record<string, Stat>;
+  reliability?: Reliability | null;
+  onToggleReversed?: (id: string) => void;
   onChangeType: (type: QuestionType) => void;
   onIgnore: () => void;
   onSplit: () => void;
 }
 
-export function GroupCard({ index, group, questions, stats, onChangeType, onIgnore, onSplit }: GroupCardProps) {
+export function GroupCard({ index, group, questions, stats, reliability, onToggleReversed, onChangeType, onIgnore, onSplit }: GroupCardProps) {
   const types = new Set(questions.map((q) => q.type));
   const shared = types.size === 1 ? questions[0].type : '';
   return (
@@ -268,7 +331,7 @@ export function GroupCard({ index, group, questions, stats, onChangeType, onIgno
         </div>
       </header>
       <p className="card-meta">题组 · {questions.length} 个子项，分别统计</p>
-      <GroupBody questions={questions} stats={stats} />
+      <GroupBody questions={questions} stats={stats} reliability={reliability} onToggleReversed={onToggleReversed} />
     </article>
   );
 }
