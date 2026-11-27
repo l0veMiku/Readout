@@ -46,7 +46,8 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
   });
   const usedAI = included.filter((q) => q.type === 'open' && aiResults[q.id]);
   const models = [...new Set(usedAI.map((q) => aiResults[q.id].model))];
-  const count = (t: string) => included.filter((q) => q.type === t).length;
+  const count = (t: string) => included.filter((q) => q.type === t && !q.derived).length;
+  const scoreCount = included.filter((q) => q.derived).length;
   const kinds = (
     [
       ['单选', count('single')],
@@ -58,6 +59,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
   )
     .filter(([, n]) => n !== 0)
     .map(([k, n]) => `${k} ${n} 道`);
+  if (scoreCount > 0) kinds.push(`维度得分 ${scoreCount} 个`);
 
   return (
     <article className="page">
@@ -77,7 +79,9 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
           </div>
           <div>
             <dt>纳入题目</dt>
-            <dd>{included.length} 道</dd>
+            <dd>
+              {included.length} 道{scoreCount > 0 ? `（含 ${scoreCount} 个维度得分）` : ''}
+            </dd>
           </div>
           <div>
             <dt>生成时间</dt>
@@ -130,17 +134,12 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
                     {q.title}
                     <span className="tag">{q.derived ? '维度得分' : TYPE_LABELS[q.type]}</span>
                   </h3>
-                  {q.derived && (
-                    <p className="r-note">
-                      {scoreNote(q, dataset)}
-                      {stat.missing > 0 ? `其中 ${stat.missing} 份没有得分。` : ''}
-                    </p>
-                  )}
+                  {q.derived && <p className="r-note">{scoreNote(q, dataset)}</p>}
                   {stat.n === 0 ? (
-                    <p className="empty">这道题没有有效回答。</p>
+                    <p className="empty">{q.derived ? '按当前的算分条件，没有任何问卷得到得分。' : '这道题没有有效回答。'}</p>
                   ) : (
                     <>
-                      <p className="stat-line">{sentence(stat)}</p>
+                      <p className="stat-line">{sentence(stat, !!q.derived)}</p>
                       <QuestionBody stat={stat} bare />
                     </>
                   )}
@@ -221,8 +220,8 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
             <>
               <dt>维度得分</dt>
               <dd>
-                维度得分是题组各量表子题的均值，反向题按题组的翻转范围折回去后参与计算，按数值题统计。
-                {scores.map((s) => `${s.note}${s.missing > 0 ? `其中 ${s.missing} 份没有得分。` : ''}`).join('')}
+                维度得分是题组各量表子题的均值；反向题先按翻转范围（最小值 + 最大值 − 原始分）换算，再按数值题统计。
+                {scores.map((s) => s.note).join('')}
               </dd>
             </>
           )}

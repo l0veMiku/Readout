@@ -50,7 +50,7 @@ export function scoreStates(dataset: Dataset, rows: Record<string, string>[]): S
     if (members.length < 2) return [];
     const columns = members.map((q) => rows.map((r) => scaleScore(r[q.id])));
     const range = scaleRange(columns);
-    const blocker = !range ? '这些题没有有效回答' : !scaleConsistent(columns) ? '各题取值范围不一致，无法取均值' : null;
+    const blocker = !range ? '这些题没有有效回答' : !scaleConsistent(columns) ? '各题取值范围不一致（如 1–5 分与 0–10 分混在一起）' : null;
     const missing = dataset.scores?.[group.id] ?? null;
     return [{ group, members, columns, range, blocker, missing, question: blocker === null ? derivedQuestion(group, members) : null }];
   });
@@ -102,5 +102,5 @@ export function scoreNote(question: Question, dataset: Dataset): string {
   const members = dataset.questions.filter((q) => q.groupId === groupId && q.included && q.type === 'scale');
   const rule = dataset.scores?.[groupId];
   const flipped = members.some((q) => q.reversed) ? '，反向题已翻转' : '';
-  return `题组「${group?.title ?? ''}」${members.length} 道量表子题的均值${flipped}${rule ? `；要求${SCORE_MISSING_LABELS[rule]}` : ''}。`;
+  return `题组「${group?.title ?? ''}」${members.length} 道量表子题的均值${flipped}；只算${rule ? SCORE_MISSING_LABELS[rule] : ''}的问卷。`;
 }

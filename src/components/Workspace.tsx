@@ -49,6 +49,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
   const openAnswers = openQuestions.reduce((s, q) => s + (stats[q.id]?.n ?? 0), 0);
   const aiDone = openQuestions.filter((q) => aiResults[q.id]).length;
   const groupCount = items.filter((item) => item.kind === 'group').length;
+  const scoreCount = scoreStates.filter((s) => s.missing).length;
 
   const jump = (i: number) => {
     setNavOpen(false);
@@ -114,7 +115,8 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
           </button>
           <input className="report-title" value={title} onChange={(e) => onTitle(e.target.value)} aria-label="报告标题" spellCheck={false} />
           <p className="work-meta">
-            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析{groupCount > 0 ? `（${groupCount} 个题组）` : ''} · {validRowCount(dataset, rows)} 份有效
+            {dataset.rows.length} 份问卷 · {included.length} 道题纳入分析
+            {groupCount > 0 ? `（${groupCount} 个题组${scoreCount > 0 ? `，${scoreCount} 个维度得分` : ''}）` : ''} · {validRowCount(dataset, rows)} 份有效
             {cleaning && cleaning.excluded > 0 ? `（已剔除 ${cleaning.excluded} 份）` : ''} · {dataset.fileName}
             {dataset.sheet ? ` · 工作表「${dataset.sheet}」` : ''}
             {dataset.skippedRows > 0 ? ` · 已跳过表头上方 ${dataset.skippedRows} 行` : ''}
@@ -157,7 +159,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
         <section className="stat-cards">
           {[
             ['有效样本', String(validRowCount(dataset, rows)), cleaning && cleaning.excluded > 0 ? `回收 ${dataset.rows.length} 份，剔除 ${cleaning.excluded} 份` : `共 ${dataset.rows.length} 份`],
-            ['纳入题目', String(included.length), `已忽略 ${ignored.length} 道`],
+            ['纳入题目', String(included.length), `已忽略 ${ignored.length} 道${scoreCount > 0 ? ` · 含 ${scoreCount} 个维度得分` : ''}`],
             ['开放题回答', String(openAnswers), `${openQuestions.length} 道开放题`],
             ['AI 已归纳', String(aiDone), aiDone ? `共 ${openQuestions.length} 道开放题` : '需要配置模型'],
           ].map(([k, v, note]) => (

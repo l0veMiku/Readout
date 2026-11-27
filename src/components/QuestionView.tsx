@@ -69,8 +69,10 @@ function chips(stat: Stat): [string, string][] {
   }
 }
 
-export function sentence(stat: Stat) {
-  const head = `有效回答 ${stat.n} 条${stat.missing > 0 ? `（缺失 ${stat.missing}）` : ''}`;
+export function sentence(stat: Stat, derived = false) {
+  const head = derived
+    ? `有效得分 ${stat.n} 份${stat.missing > 0 ? `（另有 ${stat.missing} 份没有得分）` : ''}`
+    : `有效回答 ${stat.n} 条${stat.missing > 0 ? `（缺失 ${stat.missing}）` : ''}`;
   const top = (o: OptionRow | undefined, verb: string) => (o ? [`${verb} ${o.name} ${pctCI(o)}`] : []);
   const parts: string[] = [];
   switch (stat.kind) {
@@ -341,7 +343,7 @@ export function GroupCard({ index, group, questions, stats, reliability, onToggl
   );
 }
 
-// 题组卡片底部的维度得分一行：生成、选缺失规则、移除；不能生成时写明原因。
+// 题组卡片底部的维度得分一行：生成、选算分条件、移除；不能生成时写明原因。
 function ScoreControls({ score, onScore }: { score: ScoreState; onScore: (groupId: string, missing: ScoreMissing | null) => void }) {
   const remove = (
     <button className="btn small ghost" onClick={() => onScore(score.group.id, null)}>
@@ -353,13 +355,13 @@ function ScoreControls({ score, onScore }: { score: ScoreState; onScore: (groupI
       <b>维度得分</b>
       {score.blocker ? (
         <>
-          <span className="hint">无法生成：{score.blocker}。</span>
+          <span className="hint">无法生成维度得分：{score.blocker}。</span>
           {score.missing && remove}
         </>
       ) : score.missing ? (
         <>
           <label className="inline">
-            缺失规则
+            算分条件
             <select value={score.missing} onChange={(e) => onScore(score.group.id, e.target.value as ScoreMissing)}>
               {(Object.keys(SCORE_MISSING_LABELS) as ScoreMissing[]).map((rule) => (
                 <option key={rule} value={rule}>
@@ -368,7 +370,6 @@ function ScoreControls({ score, onScore }: { score: ScoreState; onScore: (groupI
               ))}
             </select>
           </label>
-          <span className="hint">得分卡片在题组后面，像一道数值题。</span>
           {remove}
         </>
       ) : (
@@ -376,15 +377,15 @@ function ScoreControls({ score, onScore }: { score: ScoreState; onScore: (groupI
           <button className="btn small" onClick={() => onScore(score.group.id, 'complete')}>
             生成维度得分
           </button>
-          <span className="hint">各子题的均值，反向题先翻转。</span>
+          <span className="hint">各子题取均值，反向题先翻转。</span>
         </>
       )}
     </div>
   );
 }
 
-export function QuestionBody({ stat, bare }: { stat: Stat; bare?: boolean }) {
-  if (stat.n === 0) return <p className="empty">这道题没有有效回答，无法统计。可以把它改成「元数据」或直接忽略。</p>;
+export function QuestionBody({ stat, bare, emptyHint }: { stat: Stat; bare?: boolean; emptyHint?: string }) {
+  if (stat.n === 0) return <p className="empty">{emptyHint ?? '这道题没有有效回答，无法统计。可以把它改成「元数据」或直接忽略。'}</p>;
   const table = <DistributionTable stat={stat} />;
   const chart = <ChartFor stat={stat} />;
   const note = sampleNote(stat.n);
@@ -573,11 +574,14 @@ export function QuestionCard({ index, question, stat, onChangeType, onIgnore, on
         </div>
       </header>
       <p className="card-meta">
-        {TYPE_LABELS[question.type]} · {locked ? `有效得分 ${stat.n} 条` : `有效回答 ${stat.n} 条`}
+        {TYPE_LABELS[question.type]} · {locked ? `有效得分 ${stat.n} 份` : `有效回答 ${stat.n} 条`}
         {stat.missing > 0 ? ` · ${locked ? '没有得分' : '缺失'} ${stat.missing} 份` : ''}
       </p>
       {note && <p className="card-note">{note}</p>}
-      <QuestionBody stat={stat} />
+      <QuestionBody
+        stat={stat}
+        emptyHint={locked ? '按当前的算分条件，没有任何问卷得到得分：可以放宽条件，或先看子题有没有作答。' : undefined}
+      />
       {children}
     </article>
   );
