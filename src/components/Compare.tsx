@@ -94,7 +94,7 @@ export function ComparisonBody({ comparison, inReport }: { comparison: Compariso
       <section className={`${block} cmp-verdict`}>
         <H>结论</H>
         <p>{comparison.sentence}</p>
-        {rows.length > 0 && groups.length > 1 && (
+        {mode === 'prop' && rows.length > 0 && groups.length > 1 && (
           <ul className="cmp-lines">
             {rows.map((r) => (
               <li key={r.name}>{r.sentence}</li>
@@ -180,9 +180,11 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison }: { d
 
   return (
     <div className="compare-wrap">
-      <header className="cmp-head">
-        <h2>交叉分析</h2>
-        <p className="empty">按一道单选题分组，看另一道题在各组上是否有差别。差值都相对第一组给出，并附 95% 区间和检验结果。</p>
+      <header className="work-head">
+        <h1 className="page-title">交叉分析</h1>
+        <p className="work-meta">
+          按一道单选题分组，看另一道题在各组上是否有差别。差值都相对人数最多的一组给出，并附 95% 区间和检验结果。
+        </p>
         <div className="cmp-pickers">
           <label>
             <span>分组题</span>
@@ -209,12 +211,18 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison }: { d
         </div>
         {notice && <p className="alert">{notice}</p>}
         {comparison && (
-          <p className="cmp-caption">
+          <p className="work-meta">
             共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
           </p>
         )}
       </header>
-      {comparison && <ComparisonBody comparison={comparison} />}
+      {comparison ? (
+        <ComparisonBody comparison={comparison} />
+      ) : (
+        <section className="card">
+          <p className="empty">选好分组题和对比题后，这里会出现结论、各组图表和分组表。</p>
+        </section>
+      )}
     </div>
   );
 }

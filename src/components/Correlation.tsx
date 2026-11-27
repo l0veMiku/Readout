@@ -195,26 +195,41 @@ export function CorrelationPage({
   const options = dataset.questions.filter((q) => isCorrQuestion(q));
   const chosen = selectedVars(dataset, selected).length;
   const clear = corr ? corr.pairs.filter(excludesZero).length : 0;
+  const groups = [
+    { key: 'scale', label: '量表题', items: options.filter((q) => !q.derived && q.type === 'scale') },
+    { key: 'numeric', label: '数值题', items: options.filter((q) => !q.derived && q.type === 'numeric') },
+    { key: 'derived', label: '维度得分', items: options.filter((q) => q.derived) },
+  ].filter((g) => g.items.length > 0);
   return (
     <div className="workspace">
       <aside className={`sidebar${navOpen ? ' open' : ''}`}>
         <p className="side-label">题目目录</p>
         <ol className="side-list corr-list">
-          {options.map((q) => {
-            const at = selected.indexOf(q.id);
-            return (
-              <li key={q.id}>
-                <button type="button" className={at >= 0 ? 'on' : ''} aria-pressed={at >= 0} onClick={() => onToggle(q.id)}>
-                  <span className={`dot dot-${q.derived ? 'numeric' : q.type}`} />
-                  <span className="side-title">{varLabel(q)}</span>
-                  <span className="side-type">
-                    {varTag(q)}
-                    {at >= 0 && <i className="var-badge">{at + 1}</i>}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
+          {groups.map((group) => (
+            <li key={group.key} className="corr-group">
+              <p className="corr-group-label">
+                {group.label}
+                <span>{group.items.length}</span>
+              </p>
+              <ol className="corr-sublist">
+                {group.items.map((q) => {
+                  const at = selected.indexOf(q.id);
+                  return (
+                    <li key={q.id}>
+                      <button type="button" className={at >= 0 ? 'on' : ''} aria-pressed={at >= 0} onClick={() => onToggle(q.id)}>
+                        <span className={`dot dot-${q.derived ? 'numeric' : q.type}`} />
+                        <span className="side-title">{varLabel(q)}</span>
+                        <span className="side-type">
+                          {varTag(q)}
+                          {at >= 0 && <i className="var-badge">{at + 1}</i>}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </li>
+          ))}
         </ol>
         {chosen > 0 && (
           <button type="button" className="link corr-clear" onClick={onClear}>
@@ -228,7 +243,7 @@ export function CorrelationPage({
           <button className="btn small nav-toggle" onClick={() => setNavOpen((v) => !v)}>
             题目目录
           </button>
-          <h1 className="corr-title">相关分析</h1>
+          <h1 className="page-title">相关分析</h1>
           <p className="work-meta">
             选两个以上数值题、量表题或维度得分；每一对只用两者都有作答的问卷，区间用 Fisher z 变换，区间不含 0 的系数加粗。
           </p>
