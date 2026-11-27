@@ -1,3 +1,4 @@
+import { startTransition, useMemo, useState } from 'react';
 import type { Dataset, Question } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import { isCorrQuestion } from '../lib/correlation.ts';
@@ -19,9 +20,24 @@ export const selectedVars = (dataset: Dataset, ids: string[]) =>
 // pairs 按变量顺序两两排列，(i, j) 在其中的下标。
 const pairIndex = (m: number, i: number, j: number) => (i * (2 * m - i - 1)) / 2 + (j - i - 1);
 
+const PAGE = 100;
+
 export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boolean }) {
   const { variables, counts, pairs } = corr;
+  // 报告里直接展开；页面上按次展开，表格只在展开时构建，变量多时首屏也更轻。
+  const [expanded, setExpanded] = useState(!!inReport);
+  // 行多的表先让箭头和按钮立刻响应，再把表格挂上去。
+  const [rowsShown, setRowsShown] = useState(!!inReport);
+  // 一次最多挂 100 行，其余点「显示更多」，避免一次选中几十个变量时卡住。
+  const [limit, setLimit] = useState(PAGE);
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    setRowsShown(false);
+    if (next) startTransition(() => setRowsShown(true));
+  };
   const m = variables.length;
+  const shown = inReport ? pairs : pairs.slice(0, Math.min(limit, pairs.length));
   const block = inReport ? 'q-sec' : 'card';
   const notes = [
     '95% 区间不含 0 的系数加粗。',
@@ -29,11 +45,9 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
     '每一对只用两者都有作答的问卷（成对删除）；对角线是各变量的有效样本量。',
   ];
   if (pairs.some((p) => p.r !== null && !p.ci)) notes.push('成对样本只有 3 份的变量对不显示区间：Fisher z 需要 4 份以上。');
-  return (
-    <section className={block}>
-      <div className="cmp-verdict">
-        <p>{corr.sentence}</p>
-      </div>
+  // 展开/收起明细时矩阵不重建：几十个变量时矩阵有上千个格子，重建一下就是一次明显卡顿。
+  const matrix = useMemo(
+    () => (
       <div className="table-scroll">
         <table className="cmp corr-matrix">
           <thead>
@@ -82,43 +96,70 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
           </tbody>
         </table>
       </div>
-      <details className="corr-pairs" open={inReport || undefined}>
-        <summary>每对的成对样本量、r、95% 区间与 p 值（{pairs.length} 对）</summary>
-        <div className="table-scroll">
-          <table className="cmp">
-            <thead>
-              <tr>
-                <th>变量 A</th>
-                <th>变量 B</th>
-                <th>成对样本量</th>
-                <th>r</th>
-                <th>95% 区间</th>
-                <th>p</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pairs.map((p, i) => (
-                <tr key={i}>
-                  <td className="cmp-name">{p.a}</td>
-                  <td>{p.b}</td>
-                  <td>{p.n}</td>
-                  {p.r === null ? (
-                    <td colSpan={3} className="corr-na">
-                      —<span className="ci">{p.blocker}</span>
-                    </td>
-                  ) : (
-                    <>
-                      <td className={excludesZero(p) ? 'corr-bold' : ''}>{formatNumber(p.r, 2)}</td>
-                      <td>{p.ci ? formatCI(p.ci, 2) : '—'}</td>
-                      <td>{formatP(p.p ?? 1)}</td>
-                    </>
-                  )}
+    ),
+    [variables, counts, pairs, m],
+  );
+  return (
+    <section className={block}>
+      <div className="cmp-verdict">
+        <p>{corr.sentence}</p>
+      </div>
+      {matrix}
+      <div className="corr-pairs">
+        <button type="button" className="corr-pairs-toggle" aria-expanded={expanded} onClick={toggle}>
+          <svg className={`chev${expanded ? ' open' : ''}`} width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>每对的成对样本量、r、95% 区间与 p 值</span>
+          <em>{pairs.length} 对</em>
+        </button>
+        {expanded && rowsShown && (
+          <div className={`table-scroll corr-pairs-body${inReport ? '' : ' scroll'}`}>
+            <table className="cmp">
+              <thead>
+                <tr>
+                  <th>变量 A</th>
+                  <th>变量 B</th>
+                  <th>成对样本量</th>
+                  <th>r</th>
+                  <th>95% 区间</th>
+                  <th>p</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+              </thead>
+              <tbody>
+                {shown.map((p, i) => (
+                  <tr key={i}>
+                    <td className="cmp-name">{p.a}</td>
+                    <td>{p.b}</td>
+                    <td>{p.n}</td>
+                    {p.r === null ? (
+                      <td colSpan={3} className="corr-na">
+                        —<span className="ci">{p.blocker}</span>
+                      </td>
+                    ) : (
+                      <>
+                        <td className={excludesZero(p) ? 'corr-bold' : ''}>{formatNumber(p.r, 2)}</td>
+                        <td>{p.ci ? formatCI(p.ci, 2) : '—'}</td>
+                        <td>{formatP(p.p ?? 1)}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!inReport && shown.length < pairs.length && (
+              <div className="corr-more">
+                <button type="button" className="btn small ghost" onClick={() => startTransition(() => setLimit((v) => v + PAGE))}>
+                  再显示 {Math.min(PAGE, pairs.length - shown.length)} 对
+                </button>
+                <span className="hint">
+                  已列出 {shown.length} / {pairs.length} 对，报告里收录全部。
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div className="cmp-notes corr-notes">
         {notes.map((n) => (
           <p key={n}>{n}</p>

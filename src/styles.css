@@ -1871,20 +1871,88 @@ button {
 }
 
 .corr-pairs {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px dashed var(--line);
-  padding-top: 10px;
+  padding-top: 14px;
 }
 
-.corr-pairs > summary {
-  cursor: pointer;
+.corr-pairs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sheet);
   color: var(--ink-2);
-  font-size: 13px;
+  font-family: inherit;
+  font-size: 13.5px;
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
 }
 
-.corr-pairs[open] > summary {
-  margin-bottom: 8px;
+.corr-pairs-toggle:hover {
+  border-color: var(--green-mid);
+  background: #fff;
+}
+
+.corr-pairs-toggle:focus-visible {
+  outline: 2px solid var(--green-mid);
+  outline-offset: 2px;
+}
+
+.corr-pairs-toggle .chev {
+  flex: none;
+  color: var(--green);
+  transition: transform 0.15s ease;
+}
+
+.corr-pairs-toggle .chev.open {
+  transform: rotate(90deg);
+}
+
+.corr-pairs-toggle span {
+  flex: 1;
+  min-width: 0;
+}
+
+.corr-pairs-toggle em {
+  font-style: normal;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.corr-pairs-body {
+  margin-top: 10px;
+  contain: content;
+}
+
+.corr-pairs-body.scroll {
+  max-height: min(60vh, 520px);
+  overflow: auto;
+}
+
+.corr-pairs-body thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--sheet);
+}
+
+.corr-more {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px 2px;
+}
+
+.corr-more .hint {
+  color: var(--ink-3);
+  font-size: 12.5px;
 }
 
 .corr-notes p {
