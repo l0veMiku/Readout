@@ -1223,6 +1223,39 @@ button {
   align-items: center;
 }
 
+.report-bar {
+  width: 210mm;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.report-tip {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.report-exports {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.export-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 .report-pending {
   width: 210mm;
   max-width: 100%;
@@ -1452,6 +1485,13 @@ button {
 
   .report-wrap {
     padding: 16px 0 40px;
+  }
+
+  .report-bar {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0 14px;
   }
 
   .page {
@@ -1965,6 +2005,25 @@ button {
 
   .topbar {
     display: none;
+  }
+
+  .report-bar {
+    display: none;
+  }
+
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h2,
+  h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  thead {
+    display: table-header-group;
   }
 
   .report-wrap {

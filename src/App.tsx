@@ -27,6 +27,9 @@ import { bootstrapPool } from './lib/bootstrapPool.ts';
 import { mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
+import { buildReportHtml } from './lib/exportHtml.ts';
+import { downloadText, reportFileName } from './lib/reportFile.ts';
+import { exportReportPdf } from './lib/exportPdf.ts';
 import type { AIResult, Cleaning, Dataset, Question, QuestionType, ScoreMissing } from './types.ts';
 
 type View = 'home' | 'workspace' | 'compare' | 'correlation' | 'report';
@@ -52,6 +55,10 @@ export default function App() {
   const [pickNotice, setPickNotice] = useState('');
   // 相关分析选的变量；和交叉分析一样只存在内存里，刷新即清除。
   const [corrVars, setCorrVars] = useState<string[]>([]);
+  // 一键 PDF 的进度；非空时按钮换成进度与取消。
+  const [exportState, setExportState] = useState<{ done: number; total: number } | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const cancelExport = useRef(false);
 
   const latest = useRef(dataset);
   latest.current = dataset;
@@ -83,6 +90,35 @@ export default function App() {
     setAiResults({});
     setTitle(name.replace(/\.[^.]+$/, ''));
     go('workspace');
+  };
+
+  // 报告的三个出口都基于当前屏幕上的这份 DOM，导出不会改动分析状态。
+  const reportElement = () => document.querySelector<HTMLElement>('.report-wrap .page');
+  const exportHtml = () => {
+    const el = reportElement();
+    if (!el) return;
+    downloadText(reportFileName(title, 'html'), buildReportHtml(el.outerHTML, title || '问卷分析报告'));
+  };
+  const exportPdf = async () => {
+    const el = reportElement();
+    if (!el || exportState) return;
+    cancelExport.current = false;
+    setExportState({ done: 0, total: 0 });
+    try {
+      await exportReportPdf({
+        element: el,
+        title: title || '问卷分析报告',
+        onProgress: (done, total) => setExportState({ done, total }),
+        shouldCancel: () => cancelExport.current,
+      });
+    } finally {
+      setExportState(null);
+    }
+  };
+  const startPrint = () => {
+    // 先关掉提示层再打印，避免提示层被一起印进 PDF。
+    setPrintOpen(false);
+    requestAnimationFrame(() => window.print());
   };
 
   const load = async (file: File) => {
@@ -292,7 +328,7 @@ export default function App() {
               模型设置
             </button>
             {showReport ? (
-              <button className="btn primary" onClick={() => window.print()} disabled={pendingIntervals > 0}>
+              <button className="btn primary" onClick={() => setPrintOpen(true)} disabled={pendingIntervals > 0 || !!exportState}>
                 打印 / 另存为 PDF
               </button>
             ) : (
@@ -345,13 +381,55 @@ export default function App() {
           <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} />
         ) : showReport && analysis ? (
           <div className="report-wrap">
-            {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
+            <div className="report-bar">
+              <p className="report-tip">导出或打印的文件包含问卷的聚合结果与开放题引文，请自行确认分享范围。</p>
+              <div className="report-exports">
+                {exportState ? (
+                  <div className="export-progress" role="status">
+                    <span>
+                      {exportState.done === 0 ? '正在准备 PDF…' : `正在生成 PDF ${exportState.done}/${exportState.total}`}
+                    </span>
+                    <button className="link" onClick={() => (cancelExport.current = true)}>
+                      取消
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button className="btn ghost" onClick={exportHtml} disabled={pendingIntervals > 0} title="自包含 HTML：内联样式与图表，断网可看">
+                      导出 HTML
+                    </button>
+                    <button className="btn ghost" onClick={exportPdf} disabled={pendingIntervals > 0} title="图片版 PDF，文字不可选中；需要可选中文字请用打印">
+                      下载 PDF
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印或导出。</p>}
             <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />
         )}
       </ErrorBoundary>
+
+      {printOpen && (
+        <Modal title="打印 / 另存为 PDF" onClose={() => setPrintOpen(false)}>
+          <div className="ai-form">
+            <p className="hint">
+              在打印对话框里把目标选成「另存为 PDF」，勾选「背景图形」以保留底色，页边距用默认值即可。这条路径输出的是矢量 PDF，文字可以选中、文件更小；一键「下载 PDF」是图片版。
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="btn ghost" onClick={() => setPrintOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="btn primary" onClick={startPrint}>
+                继续打印
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {aiOpen && (
         <Modal title="模型设置" onClose={() => setAiOpen(false)}>
