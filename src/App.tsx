@@ -4,6 +4,8 @@ import { Workspace } from './components/Workspace.tsx';
 import { Report } from './components/Report.tsx';
 import { ComparePage, comparisonFor, isGroupQuestion, pickStillValid } from './components/Compare.tsx';
 import type { ComparisonPick } from './components/Compare.tsx';
+import { CorrelationPage } from './components/Correlation.tsx';
+import { correlationFor, isCorrQuestion } from './lib/correlation.ts';
 import { withMedianIntervals } from './lib/compare.ts';
 import type { Comparison } from './lib/compare.ts';
 import type { Interval } from './lib/intervals.ts';
@@ -27,12 +29,13 @@ import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
 import type { AIResult, Cleaning, Dataset, Question, QuestionType, ScoreMissing } from './types.ts';
 
-type View = 'home' | 'workspace' | 'compare' | 'report';
+type View = 'home' | 'workspace' | 'compare' | 'correlation' | 'report';
 
 function readHash(): View {
   if (location.hash === '#/workspace') return 'workspace';
   if (location.hash === '#/report') return 'report';
   if (location.hash === '#/compare') return 'compare';
+  if (location.hash === '#/correlation') return 'correlation';
   return 'home';
 }
 
@@ -47,6 +50,8 @@ export default function App() {
   const [view, setView] = useState<View>(readHash);
   const [pick, setPick] = useState<ComparisonPick | null>(null);
   const [pickNotice, setPickNotice] = useState('');
+  // 相关分析选的变量；和交叉分析一样只存在内存里，刷新即清除。
+  const [corrVars, setCorrVars] = useState<string[]>([]);
 
   const latest = useRef(dataset);
   latest.current = dataset;
@@ -169,6 +174,16 @@ export default function App() {
   }, [analysis, stats, scoredRows, baseRows]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
   const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows) : null), [analysis, pick, scoredRows]);
+  const corr = useMemo(() => (analysis ? correlationFor(analysis, corrVars, scoredRows) : null), [analysis, corrVars, scoredRows]);
+  // 选的题被忽略、改了题型或被移除后，相关分析的变量跟着去掉。
+  useEffect(() => {
+    if (!analysis) return;
+    setCorrVars((prev) => {
+      const keep = prev.filter((id) => isCorrQuestion(analysis.questions.find((q) => q.id === id)));
+      return keep.length === prev.length ? prev : keep;
+    });
+  }, [analysis]);
+  const toggleCorr = (id: string) => setCorrVars((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   const [medianCis, setMedianCis] = useState<{ for: Comparison; done: (Interval | null | undefined)[] } | null>(null);
   const comparing = useRef(new WeakSet<Comparison>());
   const currentComparison = useRef(baseComparison);
@@ -244,10 +259,11 @@ export default function App() {
   const showReport = view === 'report' && !!dataset;
   const showWorkspace = view === 'workspace' && !!dataset;
   const showCompare = view === 'compare' && !!dataset;
+  const showCorrelation = view === 'correlation' && !!dataset;
 
   return (
     <>
-      {showWorkspace || showCompare || showReport ? (
+      {showWorkspace || showCompare || showCorrelation || showReport ? (
         <header className="topbar">
           {showReport ? (
             <button className="btn" onClick={() => go('workspace')}>
@@ -257,11 +273,14 @@ export default function App() {
             <>
               <Brand onClick={() => go('home')} />
               <nav className="topbar-nav" aria-label="页面">
-                <button className={showCompare ? '' : 'active'} onClick={() => go('workspace')}>
+                <button className={showWorkspace ? 'active' : ''} onClick={() => go('workspace')}>
                   工作台
                 </button>
                 <button className={showCompare ? 'active' : ''} onClick={() => go('compare')}>
                   交叉分析
+                </button>
+                <button className={showCorrelation ? 'active' : ''} onClick={() => go('correlation')}>
+                  相关分析
                 </button>
               </nav>
             </>
@@ -320,10 +339,12 @@ export default function App() {
             }}
             comparison={comparison}
           />
+        ) : showCorrelation && analysis ? (
+          <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} corr={corr} />
         ) : showReport && analysis ? (
           <div className="report-wrap">
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印。</p>}
-            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} />
+            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

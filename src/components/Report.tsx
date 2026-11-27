@@ -11,8 +11,11 @@ import type { Reliability } from '../lib/reliability.ts';
 import { cleaningSentence } from '../lib/cleaning.ts';
 import type { CleaningSummary } from '../lib/cleaning.ts';
 import { scoreNote } from '../lib/scores.ts';
+import { CorrBody } from './Correlation.tsx';
+import type { Correlation } from '../lib/correlation.ts';
 
 interface ReportProps {
+  correlation: Correlation | null;
   comparison: Comparison | null;
   dataset: Dataset;
   stats: Record<string, Stat>;
@@ -24,7 +27,7 @@ interface ReportProps {
   cleaning: CleaningSummary | null;
 }
 
-export function Report({ comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning }: ReportProps) {
+export function Report({ correlation, comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
   const anyReversed = dataset.questions.some((q) => q.included && q.reversed);
   const anyReliability = Object.values(reliabilities).some((r) => r !== null && r !== undefined);
@@ -168,6 +171,13 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
         </section>
       )}
 
+      {correlation && (
+        <section className="r-sec">
+          <h2>相关分析</h2>
+          <CorrBody corr={correlation} inReport />
+        </section>
+      )}
+
       <section className="r-sec methods">
         <h2>方法说明</h2>
         <dl>
@@ -244,6 +254,16 @@ export function Report({ comparison, dataset, stats, findings, title, aiResults,
                 单选题做整表的独立性检验，多选题每个选项分别做「选/未选」检验。默认 Pearson 卡方（不做连续性校正）；
                 恰好两组且有格子期望频数小于 5 时改用 Fisher 精确检验；三组及以上且超过 20% 的格子期望频数小于 5
                 时，结果旁标注不可靠。多选题各选项分别检验，未做多重比较校正，p 值偏乐观。
+              </dd>
+            </>
+          )}
+          {correlation && (
+            <>
+              <dt>相关分析</dt>
+              <dd>
+                Pearson 相关系数；95% 区间用 Fisher z 变换，p 值用 t 分布（自由度 n − 2），与 R 的 cor.test 一致。
+                每一对只用两者都有作答的问卷（成对删除），样本量写在结果里。{correlation.variables.length} 个变量两两检验，
+                共 {correlation.pairs.length} 对，未做多重比较校正。结论里的「区间不含 0」不是「显著」。
               </dd>
             </>
           )}
