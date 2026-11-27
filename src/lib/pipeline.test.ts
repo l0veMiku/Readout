@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
 import { inferType, splitMultiDetailed } from './infer.ts';
 import { buildDataset, decodeText, parseGrid, parseWorkbook } from './parse.ts';
-import { buildFindings, computeStat, sampleNote } from './stats.ts';
+import { buildFindings, computeStat, numericSamples, sampleNote, withBootstrap } from './stats.ts';
+import { bootstrapIntervals } from './intervals.ts';
 import { includedItems, mergeQuestions, splitGroup, toggleIncluded } from './groups.ts';
 
 function demoDataset() {
@@ -134,6 +135,28 @@ test('every proportion and mean carries a 95% interval, and small samples are fl
   assert.ok(one.kind === 'scale' && one.mean === 4 && one.meanCI === null);
   assert.equal(sampleNote(30), null);
   assert.match(`${sampleNote(12)}`, /不足 30 条/);
+});
+
+test('numeric stats ship without intervals first and equal the synchronous result once the background job lands', () => {
+  const q: Question = { id: 'q', title: 't', rawTitle: 'q', type: 'numeric', included: true };
+  const rows = [...Array.from({ length: 60 }, (_, i) => ({ q: String(((i * 37) % 23) / 4) })), { q: '' }];
+  const sync = computeStat(q, rows);
+  const first = computeStat(q, rows, { deferBootstrap: true });
+  assert.ok(sync.kind === 'numeric' && first.kind === 'numeric');
+  if (sync.kind !== 'numeric' || first.kind !== 'numeric') return;
+  assert.equal(first.ciPending, true);
+  assert.equal(first.meanCI, null);
+  assert.equal(first.medianCI, null);
+  assert.equal(first.mean, sync.mean);
+  assert.deepEqual(first.bins, sync.bins);
+
+  const done = withBootstrap(first, bootstrapIntervals(numericSamples(q, rows)));
+  assert.deepEqual(done, sync);
+  assert.equal('ciPending' in done, false);
+  // 已有区间的结果不会被再次合并改写；有效回答不足 2 条时补上后仍然没有区间。
+  assert.equal(withBootstrap(done, { mean: null, median: null }), done);
+  const single = computeStat(q, [{ q: '3' }]);
+  assert.deepEqual(withBootstrap(computeStat(q, [{ q: '3' }], { deferBootstrap: true }), bootstrapIntervals([3])), single);
 });
 
 test('header row is detected below a title row and columns are deduplicated', () => {

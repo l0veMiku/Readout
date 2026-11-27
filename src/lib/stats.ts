@@ -1,7 +1,7 @@
 import type { Dataset, Question } from '../types.ts';
 import { likertScore, numericValues, splitMultiDetailed } from './infer.ts';
 import { bootstrapIntervals, meanInterval, wilsonInterval } from './intervals.ts';
-import type { Interval } from './intervals.ts';
+import type { BootIntervals, Interval } from './intervals.ts';
 import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, formatRange, isAnswer } from './text.ts';
 
 export interface OptionRow {
@@ -26,7 +26,7 @@ export type Stat =
   | (Base & { kind: 'single'; options: OptionRow[] })
   | (Base & { kind: 'multi'; options: OptionRow[]; avgSelected: number })
   | (Base & { kind: 'scale'; levels: OptionRow[]; numeric: boolean; mean: number | null; median: number | null; sd: number | null; top2: number | null; meanCI: Interval | null; top2CI: Interval | null })
-  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[]; meanCI: Interval | null; medianCI: Interval | null })
+  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[]; meanCI: Interval | null; medianCI: Interval | null; ciPending?: boolean })
   | (Base & { kind: 'open'; avgChars: number; samples: string[] });
 
 export function answersOf(q: Question, rows: Record<string, string>[]) {
@@ -105,7 +105,30 @@ function histogram(xs: number[]): Bin[] {
   return bins.map((b) => ({ ...b, pct: b.count / xs.length }));
 }
 
-export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
+// 这道数值题的有效取值；后台线程重抽样时用，与 computeStat 取同一批数。
+export function numericSamples(q: Question, rows: Record<string, string>[]) {
+  return numericValues(answersOf(q, rows).valid);
+}
+
+// 把后台算好的区间并回 computeStat(..., { deferBootstrap: true }) 先返回的结果。
+export function withBootstrap(stat: Stat, boot: BootIntervals): Stat {
+  if (stat.kind !== 'numeric' || !stat.ciPending) return stat;
+  return {
+    n: stat.n,
+    missing: stat.missing,
+    kind: 'numeric',
+    mean: stat.mean,
+    median: stat.median,
+    sd: stat.sd,
+    min: stat.min,
+    max: stat.max,
+    bins: stat.bins,
+    meanCI: boot.mean,
+    medianCI: boot.median,
+  };
+}
+
+export function computeStat(q: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean } = {}): Stat {
   const { valid, missing } = answersOf(q, rows);
   const base = { n: valid.length, missing };
 
@@ -181,21 +204,24 @@ export function computeStat(q: Question, rows: Record<string, string>[]): Stat {
     };
   }
   if (q.type === 'numeric') {
-    const nums = numericValues(valid);
+    const nums = numericSamples(q, rows);
     if (nums.length === 0) return { ...base, kind: 'numeric', mean: null, median: null, sd: null, min: null, max: null, bins: [], meanCI: null, medianCI: null };
-    const boot = bootstrapIntervals(nums);
-    return {
+    const point = {
       ...base,
-      kind: 'numeric',
+      kind: 'numeric' as const,
       mean: mean(nums),
       median: median(nums),
       sd: sampleSD(nums),
       min: Math.min(...nums),
       max: Math.max(...nums),
       bins: histogram(nums),
-      meanCI: boot.mean,
-      medianCI: boot.median,
+      meanCI: null,
+      medianCI: null,
     };
+    // 先出点估计和直方图，区间由后台线程算好后用 withBootstrap 补上。
+    if (opts.deferBootstrap) return { ...point, ciPending: true };
+    const boot = bootstrapIntervals(nums);
+    return { ...point, meanCI: boot.mean, medianCI: boot.median };
   }
   const samples: string[] = [];
   const want = Math.min(6, valid.length);

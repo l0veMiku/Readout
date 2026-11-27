@@ -12,19 +12,21 @@ import { Chart } from './Chart.tsx';
 const smartNumber = (x: number | null) => (x === null ? '—' : Number.isInteger(x) ? String(x) : x.toFixed(2));
 const pctCI = (o: OptionRow) => withPctCI(formatPct(o.pct), o.ci);
 
-export function CIRange({ ci, digits = 1, pct = false }: { ci: { lower: number; upper: number } | null; digits?: number; pct?: boolean }) {
-  if (!ci) return null;
+export function CIRange({ ci, digits = 1, pct = false, pending = false }: { ci: { lower: number; upper: number } | null; digits?: number; pct?: boolean; pending?: boolean }) {
+  if (!ci) return pending ? <span className="ci">95% 区间计算中…</span> : null;
   return <span className="ci">95% 区间 {pct ? formatPctCI(ci) : formatCI(ci, digits)}</span>;
 }
 
 function ChartFor({ stat }: { stat: Stat }) {
+  // 数值题的区间在后台补上时 bins 不变，图表不必重建。
+  const chartKey = stat.kind === 'numeric' ? stat.bins : stat;
   const built = useMemo(() => {
     if (stat.kind === 'single' || stat.kind === 'multi') return stat.options.length ? horizontalBars(stat.options) : null;
     if (stat.kind === 'scale') return stat.levels.length ? verticalBars(stat.levels, { mean: stat.numeric ? stat.mean : null }) : null;
     // 文本量表按类别轴画分布，均值只出现在结论句和指标里。
     if (stat.kind === 'numeric') return stat.bins.length ? verticalBars(stat.bins, { rotate: true }) : null;
     return null;
-  }, [stat]);
+  }, [chartKey]);
   if (!built) return null;
   return <Chart option={built.option} height={built.height} />;
 }
@@ -54,7 +56,7 @@ function chips(stat: Stat): [string, string][] {
         ? []
         : [
             ['均值', smartNumber(stat.mean)],
-            ['95% 区间', formatCI(stat.meanCI, ciDigits(stat.mean))],
+            ['95% 区间', stat.ciPending ? '计算中' : formatCI(stat.meanCI, ciDigits(stat.mean))],
             ['中位数', smartNumber(stat.median)],
             ['标准差', smartNumber(stat.sd)],
             ['范围', `${smartNumber(stat.min)} – ${smartNumber(stat.max)}`],
@@ -138,22 +140,23 @@ function DistributionTable({ stat }: { stat: Stat }) {
     );
   }
   if (stat.kind === 'numeric' && stat.mean !== null) {
-    const items: [string, string, { lower: number; upper: number } | null, number][] = [
-      ['均值', smartNumber(stat.mean), stat.meanCI, ciDigits(stat.mean)],
-      ['中位数', smartNumber(stat.median), stat.medianCI, ciDigits(stat.median)],
-      ['标准差', smartNumber(stat.sd), null, 1],
-      ['最小值', smartNumber(stat.min), null, 1],
-      ['最大值', smartNumber(stat.max), null, 1],
+    // 只有均值和中位数有区间，其余各行在后台计算期间不显示「计算中」。
+    const items: [string, string, { lower: number; upper: number } | null, number, boolean][] = [
+      ['均值', smartNumber(stat.mean), stat.meanCI, ciDigits(stat.mean), true],
+      ['中位数', smartNumber(stat.median), stat.medianCI, ciDigits(stat.median), true],
+      ['标准差', smartNumber(stat.sd), null, 1, false],
+      ['最小值', smartNumber(stat.min), null, 1, false],
+      ['最大值', smartNumber(stat.max), null, 1, false],
     ];
     return (
       <table className="dist">
         <tbody>
-          {items.map(([k, v, ci, digits]) => (
+          {items.map(([k, v, ci, digits, interval]) => (
             <tr key={k}>
               <td>{k}</td>
               <td>
                 {v}
-                <CIRange ci={ci} digits={digits} />
+                <CIRange ci={ci} digits={digits} pending={interval && stat.ciPending} />
               </td>
             </tr>
           ))}
@@ -211,7 +214,7 @@ function groupStatText(stat: Stat) {
     return stat.top2 !== null ? `${base}，Top-2 ${formatPct(stat.top2)}` : base;
   }
   if (stat.kind === 'numeric' && stat.mean !== null) {
-    return `均值 ${smartNumber(stat.mean)}（95% 区间 ${formatCI(stat.meanCI, ciDigits(stat.mean))}）`;
+    return `均值 ${smartNumber(stat.mean)}（95% 区间 ${stat.ciPending ? '计算中' : formatCI(stat.meanCI, ciDigits(stat.mean))}）`;
   }
   if (stat.kind === 'single' && stat.options[0]) return `最多 ${stat.options[0].name} ${pctCI(stat.options[0])}`;
   if (stat.kind === 'multi' && stat.options[0]) return `选最多 ${stat.options[0].name} ${pctCI(stat.options[0])}`;
