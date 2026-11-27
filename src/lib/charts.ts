@@ -185,17 +185,32 @@ function niceCeil(x: number) {
   return Math.ceil(x / step) * step;
 }
 
+// 分组不只靠颜色区分：每组一套点形状 + 区间线型，灰度打印或色觉受限时也能对上图例。
+const SYMBOLS = ['circle', 'rect', 'triangle', 'diamond', 'roundRect', 'pin', 'arrow', 'circle'] as const;
+const DASHES: (number[] | undefined)[] = [undefined, [6, 4], [2, 3], [10, 3, 2, 3], [1, 3], [8, 5], [4, 2, 1, 2], [12, 4]];
+
 // 「点 + 区间」图：每个选项一行，每组一个点，点两侧的横线是 95% 区间。
 export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: boolean): { option: ChartOption; height: number } {
-  const step = series.length > 1 ? Math.min(0.24, 0.8 / series.length) : 0;
+  const step = series.length > 1 ? Math.min(0.3, 0.9 / series.length) : 0;
   const offset = (g: number) => ((series.length - 1) / 2 - g) * step;
   const fmt = (v: number) => (pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(2));
   const tops = series.flatMap((s) => s.points.map((p) => p.upper ?? p.value));
+  // 组多时每行留高一点，点与区间才不会叠在一起。
+  const rowH = series.length >= 5 ? 60 : series.length >= 3 ? 52 : 46;
   return {
-    height: rowLabels.length * 46 + (series.length > 1 ? 44 : 16),
+    height: rowLabels.length * rowH + (series.length > 1 ? 44 : 16),
     option: {
       grid: { left: 8, right: 96, top: series.length > 1 ? 36 : 12, bottom: 12, containLabel: true },
-      legend: { show: series.length > 1, top: 0, left: 8, itemWidth: 10, itemHeight: 10, icon: 'circle', textStyle: { color: '#1d2621', fontSize: 12.5 } },
+      legend: {
+        show: series.length > 1,
+        top: 0,
+        left: 8,
+        itemWidth: 12,
+        itemHeight: 12,
+        itemGap: 14,
+        data: series.map((s, g) => ({ name: s.name, icon: SYMBOLS[g % SYMBOLS.length] })),
+        textStyle: { color: '#1d2621', fontSize: 12.5 },
+      },
       tooltip: {
         trigger: 'item',
         formatter: (p) => {
@@ -225,12 +240,15 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
       },
       series: series.flatMap((s, g) => {
         const color = GROUP_COLORS[g % GROUP_COLORS.length];
+        const symbol = SYMBOLS[g % SYMBOLS.length];
+        const dash = DASHES[g % DASHES.length];
         const at = (p: DotPoint) => [p.value, p.row + offset(g)] as [number, number];
         return [
           {
             type: 'line',
+            name: s.name,
             data: s.points.flatMap((p) => (p.lower === null || p.upper === null ? [] : [[p.lower, p.row + offset(g)], [p.upper, p.row + offset(g)], ['-', '-']])),
-            lineStyle: { color, width: 2 },
+            lineStyle: { color, width: 2, type: dash ?? 'solid', cap: 'round' },
             symbol: 'none',
             z: 2,
             ...NO_TIP,
@@ -238,8 +256,10 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
           {
             type: 'scatter',
             name: s.name,
-            itemStyle: { color },
-            symbolSize: 9,
+            itemStyle: { color, borderColor: '#fcfaf5', borderWidth: 1.5 },
+            symbol,
+            symbolSize: symbol === 'rect' || symbol === 'roundRect' ? 9 : 10,
+            emphasis: { focus: 'series', scale: 1.5 },
             z: 3,
             data: s.points.map((p) => ({ value: at(p), point: p, group: s.name, name: rowLabels[p.row] })),
           },
