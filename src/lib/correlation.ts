@@ -2,7 +2,7 @@ import type { CorrectionMethod, Question } from '../types.ts';
 import type { Interval } from './intervals.ts';
 import { tCDF } from './intervals.ts';
 import { likertScore, numericValues } from './infer.ts';
-import { formatCI, formatP } from './text.ts';
+import { formatCI } from './text.ts';
 import { adjustP } from './adjust.ts';
 import { spearmanPair } from './ranks.ts';
 import { CORRECTION_LABELS } from './comparePro.ts';
@@ -134,7 +134,9 @@ export function correlationFor(dataset: { questions: Question[] }, ids: string[]
     : `${clear.length} 对的 95% 区间不含 0。`;
   if (strongest) {
     const interval = strongest.ci ? `，95% 区间 ${formatCI(strongest.ci, 2)}` : '，成对样本不足 4 份，没有区间';
-    const adj = adjust && strongest.pAdjusted !== null && strongest.pAdjusted !== undefined ? `，校正后 p = ${formatP(strongest.pAdjusted)}` : '';
+    const adj = adjust && strongest.pAdjusted !== null && strongest.pAdjusted !== undefined
+      ? `，校正后 ${strongest.pAdjusted < 0.001 ? 'p < 0.001' : `p = ${strongest.pAdjusted.toFixed(3)}`}`
+      : '';
     sentence += `最强的一对是「${strongest.a}」和「${strongest.b}」（r = ${strongest.r!.toFixed(2)}${interval}，n = ${strongest.n}${adj}）。`;
   } else {
     sentence += '没有一对能算出系数。';

@@ -75,9 +75,6 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
     <div className="compare-wrap">
       <header className="work-head">
         <h1 className="page-title">数据诊断</h1>
-        <p className="work-meta">
-          把专业模式的检查集中在一页：先看问题清单，再逐项查看缺失、分布、信度与维度、相关。每条都能跳到工作台对应卡片去改。
-        </p>
       </header>
 
       {!pro.on ? (
@@ -93,15 +90,15 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
         <>
           <section className="stat-cards">
             {[
-              ['样本', String(dataset.rows.length), valid < dataset.rows.length ? `有效 ${valid} 份` : '全部计入分析'],
-              ['需处理 / 注意', String(problems), problems === 0 ? '没有需要处理的问题' : '按严重度排序，见下方清单'],
-              ['缺失超过 10%', String(worstMissing), `${diagnostics.missing.length} 道题参与检查`],
-              ['题组', String(diagnostics.groups.length), diagnostics.groups.length ? '信度与因子前置检验' : '还没有题组'],
+              ['样本', String(dataset.rows.length), valid < dataset.rows.length ? `有效 ${valid} 份` : ''],
+              ['需处理 / 注意', String(problems), problems === 0 ? '没有' : ''],
+              ['缺失超过 10%', String(worstMissing), ''],
+              ['题组', String(diagnostics.groups.length), ''],
             ].map(([k, v, note]) => (
               <div className="stat-card" key={k}>
                 <span>{k}</span>
                 <b>{v}</b>
-                <small>{note}</small>
+                {note && <small>{note}</small>}
               </div>
             ))}
           </section>
@@ -109,7 +106,7 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
           <section className="card">
             <h2>问题清单</h2>
             {diagnostics.issues.length === 0 ? (
-              <p className="empty">没有发现明显问题。仍然建议在报告里核对缺失率与方法说明。</p>
+              <p className="empty">没有发现明显问题。</p>
             ) : (
               <ul className="issue-list">
                 {diagnostics.issues.map((issue, i) => (
@@ -157,7 +154,6 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
                 </tbody>
               </table>
             </div>
-            <p className="hint">缺失率的分子是缺失份数，分母是有效回答 + 缺失份数；跳题逻辑会让这道题的缺失偏高，先确认再处理。</p>
           </section>
 
           <section className="card">
@@ -203,7 +199,6 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
                 </tbody>
               </table>
             </div>
-            <p className="hint">偏度、峰度按 type 2 公式（与 SPSS 默认一致）；箱线图按五个数绘制。</p>
           </section>
 
           <section className="card">
@@ -265,9 +260,6 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
                 <Suspense fallback={<p className="chart-placeholder" style={{ height: heatData.labels.length * 34 + 34 }}>图表加载中…</p>}>
                   <HeatChartLazy labels={heatData.labels} matrix={heatData.matrix} />
                 </Suspense>
-                <p className="hint">
-                  变量与「相关分析」页共用选择：{corr.variables.length} 个变量、{corr.pairs.length} 对。色带为 R 常用的 RdBu（0 为白）；对角线为 1，已留空。
-                </p>
               </>
             ) : (
               <p className="empty">

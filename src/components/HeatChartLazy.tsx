@@ -39,8 +39,8 @@ export default function HeatChartLazy({ labels, matrix }: { labels: string[]; ma
       <ol className="heat-legend" aria-label="热图变量编号">
         {labels.map((label, i) => (
           <li key={`${i}-${label}`}>
-            <b>{i + 1}</b>
-            {label}
+            <span className="heat-num">{i + 1}</span>
+            <span>{label}</span>
           </li>
         ))}
       </ol>
