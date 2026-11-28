@@ -1494,6 +1494,11 @@ button {
     padding: 0 14px;
   }
 
+  .pro-summary {
+    width: 100%;
+    padding: 0 14px;
+  }
+
   .page {
     padding: 20px 16px;
     box-shadow: none;
@@ -1955,10 +1960,13 @@ button {
   .topbar {
     padding: 10px 12px;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .topbar-actions {
     gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .topbar .btn {
@@ -2157,6 +2165,37 @@ button {
   padding: 16px 20px;
 }
 
+.pro-panel.bare {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* 顶栏的专业模式按钮：开启时用浅绿底标出来 */
+.pro-toggle.on {
+  border-color: var(--green-mid);
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+
+.pro-summary {
+  width: 210mm;
+  max-width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.pro-summary .link {
+  font-size: 12.5px;
+}
+
 .pro-head {
   display: flex;
   align-items: center;
@@ -2189,11 +2228,11 @@ button {
 }
 
 .pro-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 6px 0 6px 14px;
+  gap: 8px 14px;
+  padding: 7px 0 7px 14px;
   border-top: 1px dashed var(--line);
   font-size: 13.5px;
 }
@@ -2202,7 +2241,23 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 240px;
   min-width: 0;
+}
+
+.pro-why {
+  flex: none;
+}
+
+.pro-why[open] {
+  flex-basis: 100%;
+}
+
+.pro-why p {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .pro-row select {
@@ -2217,13 +2272,6 @@ button {
   cursor: pointer;
   color: var(--green);
   font-size: 12.5px;
-}
-
-.pro-why p {
-  margin: 4px 0 0;
-  color: var(--ink-3);
-  font-size: 12.5px;
-  line-height: 1.6;
 }
 
 .pro-badge {

@@ -25,13 +25,20 @@ function Row({ checked, onToggle, title, why, children }: RowProps) {
   );
 }
 
-// 报告页的专业模式面板：开关 + A 档 + B 档，每一项都能展开看“为什么用 / 什么时候不该用”。
-export function ProModePanel({ pro, onChange }: { pro: ProModeOptions; onChange: (next: ProModeOptions) => void }) {
+// 专业模式面板：开关 + A 档 + B 档，每一项都能展开看“为什么用 / 什么时候不该用”。
+// bare 用于弹窗里：不再套一层卡片边框，宽度跟随弹窗。
+export function ProModePanel({ pro, onChange, bare }: { pro: ProModeOptions; onChange: (next: ProModeOptions) => void; bare?: boolean }) {
   const set = <K extends keyof ProModeOptions>(key: K, value: ProModeOptions[K]) => onChange({ ...pro, [key]: value });
-  const toggle = (key: 'effectSize' | 'alphaCI' | 'distribution' | 'missingTable' | 'apaTables' | 'spearman' | 'rankTest' | 'scoreForms' | 'factorCheck') => set(key, !pro[key]);
+  const toggle = (key: 'effectSize' | 'alphaCI' | 'apaTables' | 'spearman' | 'rankTest' | 'scoreForms' | 'factorCheck') => set(key, !pro[key]);
+  const distributionOn = pro.distribution || pro.missingTable;
+  const toggleDistribution = () => {
+    // 偏度/峰度与缺失率是同一个报告小节，一起开关。
+    const next = !distributionOn;
+    onChange({ ...pro, distribution: next, missingTable: next });
+  };
 
   return (
-    <section className="card pro-panel">
+    <section className={`pro-panel${bare ? ' bare' : ' card'}`}>
       <header className="pro-head">
         <label className="inline pro-switch">
           <input type="checkbox" checked={pro.on} onChange={(e) => onChange(e.target.checked ? PRO_MODE_ON : PRO_MODE_OFF)} />
@@ -69,8 +76,8 @@ export function ProModePanel({ pro, onChange }: { pro: ProModeOptions; onChange:
               why="α 也是抽样得到的，用 Bootstrap 给区间（2000 次重抽样、固定种子、可复现，与数值题的区间同一套）。完整作答不足 5 份时不给。"
             />
             <Row
-              checked={pro.distribution}
-              onToggle={() => toggle('distribution')}
+              checked={distributionOn}
+              onToggle={toggleDistribution}
               title="偏度、峰度与缺失率表"
               why="偏度/峰度及其标准误用来判断是否明显偏离正态、该不该考虑秩检验；缺失率表逐题列出有效回答、缺失份数与缺失率。有效回答不足 8 条时不给偏度/峰度。"
             />

@@ -136,7 +136,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
       </section>
 
       {pro.on && (pro.missingTable || pro.distribution) && (
-        <section className="r-sec">
+        <section className="r-sec" id="r-quality">
           <h2>数据质量</h2>
           {pro.missingTable && (
             <>

@@ -63,6 +63,7 @@ export default function App() {
   const [corrVars, setCorrVars] = useState<string[]>([]);
   // 专业模式：报告页的开关，默认全关；只在内存里，刷新即清除。
   const [pro, setPro] = useState<ProModeOptions>(PRO_MODE_OFF);
+  const [proOpen, setProOpen] = useState(false);
   // 一键 PDF 的进度；非空时按钮换成进度与取消。
   const [exportState, setExportState] = useState<{ done: number; total: number } | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
@@ -320,6 +321,31 @@ export default function App() {
   const showWorkspace = view === 'workspace' && !!dataset;
   const showCompare = view === 'compare' && !!dataset;
   const showCorrelation = view === 'correlation' && !!dataset;
+  // 顶栏按钮上的启用项数，以及报告顶部的一行摘要（让“打开后报告变了什么”一眼可见）。
+  const proCount = [
+    pro.correction !== null,
+    pro.effectSize,
+    pro.alphaCI,
+    pro.distribution || pro.missingTable,
+    pro.apaTables,
+    pro.spearman,
+    pro.rankTest,
+    pro.scoreForms,
+    pro.factorCheck,
+  ].filter(Boolean).length;
+  const proSummary = pro.on
+    ? [
+        pro.correction ? `${pro.correction === 'holm' ? 'Holm' : 'BH'} 校正` : '',
+        pro.effectSize ? "Cramér's V" : '',
+        pro.alphaCI ? 'α 区间' : '',
+        pro.distribution || pro.missingTable ? '偏度/峰度 · 缺失率' : '',
+        pro.apaTables ? '三线表' : '',
+        pro.spearman ? 'Spearman' : '',
+        pro.rankTest ? '秩检验' : '',
+        pro.scoreForms ? '得分形式' : '',
+        pro.factorCheck ? 'KMO / ω' : '',
+      ].filter(Boolean)
+    : [];
 
   return (
     <>
@@ -346,6 +372,9 @@ export default function App() {
             </>
           )}
           <div className="topbar-actions">
+            <button className={`btn ghost pro-toggle${pro.on ? ' on' : ''}`} onClick={() => setProOpen(true)} title="专业模式：多重比较校正、效应量、分布描述与非参数检验">
+              专业模式{pro.on ? ` · ${proCount} 项` : ''}
+            </button>
             <button className="btn ghost" onClick={() => setAiOpen(true)}>
               模型设置
             </button>
@@ -407,7 +436,14 @@ export default function App() {
           <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} />
         ) : showReport && analysis ? (
           <div className="report-wrap">
-            <ProModePanel pro={pro} onChange={setPro} />
+            {pro.on && (
+              <p className="pro-summary">
+                <span>专业口径：{proSummary.join(' · ')}</span>
+                <button type="button" className="link" onClick={() => document.getElementById('r-quality')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  查看数据质量
+                </button>
+              </p>
+            )}
             <div className="report-bar">
               <p className="report-tip">导出或打印的文件包含问卷的聚合结果与开放题引文，请自行确认分享范围。</p>
               <div className="report-exports">
@@ -439,6 +475,12 @@ export default function App() {
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />
         )}
       </ErrorBoundary>
+
+      {proOpen && (
+        <Modal title="专业模式" wide onClose={() => setProOpen(false)}>
+          <ProModePanel pro={pro} onChange={setPro} bare />
+        </Modal>
+      )}
 
       {printOpen && (
         <Modal title="打印 / 另存为 PDF" onClose={() => setPrintOpen(false)}>
