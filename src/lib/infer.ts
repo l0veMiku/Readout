@@ -210,10 +210,11 @@ function promoteNumericBattery(questions: Question[], rows: Record<string, strin
     if (values.length === 0) continue;
     const nums = numericValues(values);
     if (nums.length !== values.length || !nums.every((n) => Number.isInteger(n))) continue;
-    const distinct = [...new Set(nums)].sort((a, b) => a - b);
-    if (distinct.length < 3 || distinct.length > 5 || distinct[0] < 1 || distinct[distinct.length - 1] > 5) continue;
-    const key = distinct.join(',');
-    buckets.set(key, [...(buckets.get(key) ?? []), q]);
+    const distinct = new Set(nums);
+    if (distinct.size < 3 || Math.min(...nums) < 1 || Math.max(...nums) > 5) continue;
+    // 不要求每道题恰好用到同样的档位：有的题可能没人选 1 或 5。
+    // 同一份问卷里 3 列以上 1–5 整数题，按同一套量表处理。
+    buckets.set('likert-1-5', [...(buckets.get('likert-1-5') ?? []), q]);
   }
   for (const list of buckets.values()) {
     if (list.length < 3) continue;

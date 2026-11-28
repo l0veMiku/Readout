@@ -8,7 +8,11 @@ import { formatNumber, formatP, formatRange, isAnswer } from './text.ts';
 
 const COMPARE_TYPES = new Set(['single', 'multi', 'scale', 'numeric']);
 const FISHER_MAX_TABLES = 2_000_000;
-const MAX_COMPARE_GROUPS = 8;
+// 分组比较的上限是显示护栏，不针对某份数据：
+// 先排除人数 < max(1, 1%) 的组（只保留能给出数字的最小样本），再最多比较 12 组。
+const MAX_COMPARE_GROUPS = 12;
+const MIN_GROUP_N = 1;
+const MIN_GROUP_SHARE = 0.01;
 
 export function canCompare(group: Question | null, compare: Question | null): boolean {
   return (
@@ -290,7 +294,12 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh'))
     .map(([name, n]) => ({ name, n }));
   // 分组题若有一百个类别，逐个和基准组比较既没有信息量，也会把结论句写成一面墙。
-  const groups = allGroups.slice(0, MAX_COMPARE_GROUPS);
+  // 用样本量决定比较哪些组：太小的组（<max(3, 1%)）不参与，其余按人数取前 12。
+  const totalN = allGroups.reduce((sum, g) => sum + g.n, 0);
+  const minN = Math.max(MIN_GROUP_N, Math.ceil(totalN * MIN_GROUP_SHARE));
+  const eligible = allGroups.filter((g) => g.n >= minN);
+  const pool = eligible.length >= 2 ? eligible : allGroups;
+  const groups = pool.slice(0, MAX_COMPARE_GROUPS);
   const omittedGroups = allGroups.length - groups.length;
   const base = {
     group: group.id,

@@ -202,20 +202,21 @@ test('questionnaires are named by the index column, or by row number when there 
 });
 
 
-test('zeroMissing recodes 0 to missing and keeps every row', () => {
+test('missingCodes recodes every configured code and keeps every row', () => {
   const ds = buildDataset(
     [
       ['序号', 'Q'],
       ['1', '0'],
-      ['2', '3'],
+      ['2', '9'],
+      ['3', '99'],
+      ['4', '3'],
     ],
     'zero.csv',
     'UTF-8',
   );
-  const cleaning: Cleaning = { rules: [], includeFlagged: true, overrides: {}, zeroMissing: true };
+  const cleaning: Cleaning = { rules: [], includeFlagged: true, overrides: {}, missingCodes: ['0', '9', '99'] };
   assert.equal(hasCleaning(cleaning), true);
   const rows = analysisRows({ ...ds, cleaning });
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].Q, '');
-  assert.equal(rows[1].Q, '3');
+  assert.equal(rows.length, 4);
+  assert.deepEqual(rows.map((r) => r.Q), ['', '', '', '3']);
 });

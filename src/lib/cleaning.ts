@@ -62,7 +62,7 @@ export function ruleReady(rule: CleaningRule): boolean {
 
 // 没有生效的规则、也没有单份例外时，清洗设置等于不存在。
 export function hasCleaning(cleaning: Cleaning | undefined): boolean {
-  return !!cleaning && (cleaning.rules.some(ruleReady) || !!cleaning.zeroMissing || Object.keys(cleaning.overrides).length > 0);
+  return !!cleaning && (cleaning.rules.some(ruleReady) || (cleaning.missingCodes?.length ?? 0) > 0 || Object.keys(cleaning.overrides).length > 0);
 }
 
 const DURATION_HEADER = /^(?:所用时间|答题时长|答卷时长|作答时长|填写时长|用时|耗时|duration(?:\s*\(s\))?)$/i;
@@ -253,10 +253,11 @@ export function analysisRows(dataset: Dataset): Record<string, string>[] {
   if (!cleaning || !hasCleaning(cleaning)) return dataset.rows;
   const { status } = evaluateCleaning(dataset);
   const kept = dataset.rows.filter((_, ri) => status[ri] === 'valid' || (status[ri] === 'flagged' && cleaning.includeFlagged));
-  if (!cleaning.zeroMissing) return kept;
+  const codes = new Set((cleaning.missingCodes ?? []).map((c) => c.trim()).filter(Boolean));
+  if (codes.size === 0) return kept;
   return kept.map((row) => {
     const next = { ...row };
-    for (const key of Object.keys(next)) if ((next[key] ?? '').trim() === '0') next[key] = '';
+    for (const key of Object.keys(next)) if (codes.has((next[key] ?? '').trim())) next[key] = '';
     return next;
   });
 }

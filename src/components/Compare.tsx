@@ -61,7 +61,7 @@ export function ComparisonBody({ comparison, inReport, pro = PRO_MODE_OFF }: { c
   const block = inReport ? 'q-sec' : 'card';
   const H = inReport ? 'h3' : 'h2';
   const { groups, rows, mode, multi } = comparison;
-  const shown = groups.length > 8 ? groups.map((_, i) => i).sort((a, b) => groups[b].n - groups[a].n).slice(0, 8) : groups.map((_, i) => i);
+  const shown = groups.map((_, i) => i);
   const chartRows = mode === 'prop' ? rows.slice(0, 15) : rows;
   const medianRow = mode === 'mean' && rows[0].cells.some((c) => c.kind === 'mean' && c.median !== null);
 

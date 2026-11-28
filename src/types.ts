@@ -46,8 +46,8 @@ export type CleaningRule =
 export interface Cleaning {
   rules: CleaningRule[];
   includeFlagged: boolean;
-  // 把所有题里取值为 "0" 的回答当作缺失；平台常把未作答导出成 0。
-  zeroMissing?: boolean;
+  // 把这些取值当作缺失（常见 0/9/99）；平台常把未作答导出成某个编码。
+  missingCodes?: string[];
   // 单份例外，键是数据行号：keep 留下被规则剔除的问卷，drop 手动剔除。
   overrides: Record<number, 'keep' | 'drop'>;
 }

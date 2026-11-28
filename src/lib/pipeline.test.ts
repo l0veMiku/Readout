@@ -275,6 +275,11 @@ test('numeric 1-5 batteries become a scale, lone coded columns stay single', () 
 
   const onlyTwo = inferQuestions(['Q1', 'Q2'], rows).questions;
   assert.deepEqual(onlyTwo.map((q) => q.type), ['single', 'single'], '不足三列不成组');
+
+  // 缺少端点不影响成组：有的题没人选 1，有的没人选 5，仍是同一套 1–5 量表。
+  const skewed = Array.from({ length: 12 }, (_, i) => ({ A: String((i % 4) + 1), B: String((i % 4) + 2), C: String((i % 5) + 1), D: String((i % 3) + 2) }));
+  const family = inferQuestions(['A', 'B', 'C', 'D'], skewed).questions;
+  assert.deepEqual(family.map((q) => q.type), ['scale', 'scale', 'scale', 'scale']);
 });
 
 test('explicit type markers beat keyword heuristics, and open text keeps its semicolons', () => {

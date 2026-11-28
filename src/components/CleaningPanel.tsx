@@ -11,7 +11,7 @@ interface CleaningPanelProps {
   onApply: (cleaning: Cleaning | undefined) => void;
 }
 
-const EMPTY: Cleaning = { rules: [], includeFlagged: true, overrides: {}, zeroMissing: false };
+const EMPTY: Cleaning = { rules: [], includeFlagged: true, overrides: {}, missingCodes: [] };
 
 export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps) {
   const [draft, setDraft] = useState<Cleaning>(() => dataset.cleaning ?? EMPTY);
@@ -182,9 +182,13 @@ export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps)
 
   return (
     <div className="ai-form clean-form">
-      <label className="inline">
-        <input type="checkbox" checked={!!draft.zeroMissing} onChange={(e) => patch({ zeroMissing: e.target.checked })} />
-        把 0 当作缺失（所有题）
+      <label className="field">
+        <span>把哪些取值当作缺失（逗号分隔，留空不处理）</span>
+        <input
+          value={(draft.missingCodes ?? []).join(', ')}
+          placeholder="0, 9, 99"
+          onChange={(e) => patch({ missingCodes: e.target.value.split(/[,，\s]+/).filter(Boolean) })}
+        />
       </label>
       {duration && (
         <p className="hint">
