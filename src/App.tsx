@@ -390,11 +390,9 @@ export default function App() {
                 <button className={showCorrelation ? 'active' : ''} onClick={() => go('correlation')}>
                   相关分析
                 </button>
-                {pro.on && (
-                  <button className={showDiagnostics ? 'active' : ''} onClick={() => go('diagnostics')}>
-                    数据诊断
-                  </button>
-                )}
+                <button className={showDiagnostics ? 'active' : ''} onClick={() => go('diagnostics')}>
+                  数据诊断
+                </button>
               </nav>
             </>
           )}
