@@ -86,6 +86,13 @@ test('chi-square statistic, degrees of freedom and expected counts match R chisq
   assert.equal(chisqTest([[10, 4]]), null);
 });
 
+test('Yates continuity correction matches R chisq.test(correct = TRUE)', () => {
+  const r = chisqTest([[10, 20], [30, 40]], true)!;
+  close(r.statistic, 0.446428571428571, 1e-12);
+  close(r.p, 0.504035866452505, 1e-12);
+  assert.equal(r.df, 1);
+});
+
 test('independence test picks chi-square or Fisher and flags sparse tables', () => {
   const ok = independenceTest(M_OK)!;
   assert.equal(ok.method, 'chisq');
@@ -174,7 +181,7 @@ test('single-choice comparison: group counts, intervals, differences against the
   assert.equal(r.test?.df, 1);
   assert.equal(r.test?.unreliable, false);
   assert.ok(r.rows.every((x) => x.test === null));
-  assert.match(r.sentence, /^相对基准组「甲」，差别最大的一处是「一般」的占比：乙 高 45\.0 个百分点（95% 区间 [\d.]+–[\d.]+）；2 处区间不含 0，0 处没有看到明确差别。整体分布检验：卡方 = 7\.20，df = 1，p = 0\.007。$/);
+  assert.match(r.sentence, /^相对基准组「甲」，差别最大的一处是「一般」的占比：乙 高 45\.0 个百分点（95% 区间 [\d.]+–[\d.]+）；2 处区间不含 0，0 处没有看到明确差别。整体分布检验：卡方 = 7\.20，df = 1，p = 0\.007（Pearson，未做 Yates 校正）。$/);
   assert.match(row.sentence, /^「一般」：乙 高 45\.0 个百分点（95% 区间 [\d.]+–[\d.]+）。$/);
   assert.doesNotMatch(`${r.sentence}${row.sentence}`, /显著/);
 });
@@ -336,4 +343,17 @@ test('a numeric comparison can defer the median intervals and equals the synchro
   const scale = compareQuestions(g, mk('c', 'scale'), rows, { deferBootstrap: true })!;
   assert.equal('medianSamples' in scale, false);
   assert.deepEqual(scale, compareQuestions(g, mk('c', 'scale'), rows));
+});
+
+
+test('Yates option changes a 2x2 comparison and is reported', () => {
+  const table = [[183, 166], [25, 21]];
+  const plain = independenceTest(table)!;
+  const yates = independenceTest(table, { yates: true })!;
+  assert.equal(plain.method, 'chisq');
+  assert.equal(yates.yates, true);
+  close(yates.statistic, 0.007584677753178, 1e-12);
+  close(yates.p, 0.930599929976207, 1e-12);
+  assert.match(formatTest(yates), /（Yates 校正）/);
+  assert.doesNotMatch(formatTest(plain), /（Yates 校正）/);
 });

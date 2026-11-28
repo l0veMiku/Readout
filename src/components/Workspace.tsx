@@ -281,10 +281,20 @@ function MergeForm({ source, candidates, onCancel, onConfirm }: { source: Questi
             <label key={q.id} className="merge-item">
               <input type="checkbox" checked={selected.includes(q.id)} onChange={() => toggle(q.id)} />
               <span>{q.title}</span>
-              <small>{TYPE_LABELS[q.type]}</small>
+              <small>
+                {TYPE_LABELS[q.type]}
+                {q.type !== 'scale' ? ' · 不参与信度' : ''}
+              </small>
             </label>
           ))}
         </div>
+        {(() => {
+          const chosen = [source, ...candidates.filter((q) => selected.includes(q.id))];
+          const nonScale = chosen.filter((q) => q.type !== 'scale').length;
+          return nonScale > 0 ? (
+            <p className="hint">其中 {nonScale} 道不是量表题：题组仍会显示它们，但 α、KMO、ω 只用其中的量表子题计算。</p>
+          ) : null;
+        })()}
       </div>
       <div className="modal-actions">
         <button type="button" className="btn ghost" onClick={onCancel}>

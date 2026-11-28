@@ -89,12 +89,53 @@ function niceStep(raw: number) {
 }
 
 function histogram(xs: number[]): Bin[] {
-  const min = Math.min(...xs);
-  const max = Math.max(...xs);
-  if (min === max) return [{ from: min - 0.5, to: max + 0.5, name: String(min), count: xs.length, pct: 1, ci: null }];
+  const sorted = [...xs].sort((a, b) => a - b);
+  const n = sorted.length;
+  const quant = (p: number) => {
+    const h = (n - 1) * p;
+    const lo = Math.floor(h);
+    const hi = Math.min(lo + 1, n - 1);
+    return sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
+  };
+  const q1 = quant(0.25);
+  const q3 = quant(0.75);
+  const iqr = q3 - q1;
+  // 只在存在 3×IQR 之外的极端值时收窄分箱，普通数据保持原来的边界。
+  const lowFence = iqr > 0 ? q1 - 3 * iqr : sorted[0];
+  const highFence = iqr > 0 ? q3 + 3 * iqr : sorted[n - 1];
+  const hasLow = sorted[0] < lowFence - 1e-9;
+  const hasHigh = sorted[n - 1] > highFence + 1e-9;
+  const trim = (x: number) => String(Math.round(x * 100) / 100);
+
+  if (hasLow || hasHigh) {
+    const rawRange = (hasHigh ? highFence : sorted[n - 1]) - (hasLow ? lowFence : sorted[0]);
+    const step = niceStep(rawRange / 10);
+    const start = Math.floor((hasLow ? lowFence : sorted[0]) / step) * step;
+    const end = start + Math.ceil(((hasHigh ? highFence : sorted[n - 1]) - start) / step) * step;
+    const bins: Bin[] = [];
+    for (let lo = start; lo < end - 1e-9; lo += step) {
+      bins.push({ from: lo, to: lo + step, name: formatRange(lo, lo + step, (x) => trim(x)), count: 0, pct: 0, ci: null });
+    }
+    for (const x of xs) {
+      if (x < start || x >= end) continue;
+      bins[Math.min(bins.length - 1, Math.floor((x - start) / step + 1e-9))].count++;
+    }
+    bins.forEach((b) => { b.pct = b.count / n; });
+    const out: Bin[] = [];
+    const lowCount = xs.filter((x) => x < start).length;
+    if (lowCount > 0) out.push({ from: sorted[0], to: start, name: `< ${trim(start)}`, count: lowCount, pct: lowCount / n, ci: null });
+    out.push(...bins);
+    const highCount = xs.filter((x) => x >= end).length;
+    if (highCount > 0) out.push({ from: end, to: sorted[n - 1], name: `≥ ${trim(end)}`, count: highCount, pct: highCount / n, ci: null });
+    return out;
+  }
+
+  const min = sorted[0];
+  const max = sorted[n - 1];
+  if (min === max) return [{ from: min - 0.5, to: max + 0.5, name: String(min), count: n, pct: 1, ci: null }];
   const step = niceStep((max - min) / 10);
   const digits = Math.max(0, -Math.floor(Math.log10(step)));
-  const f = (x: number) => x.toFixed(digits).replace(/\.0+$/, '');
+  const f = (x: string | number) => Number(x).toFixed(digits).replace(/\.0+$/, '');
   const start = Math.floor(min / step) * step;
   const bins: Bin[] = [];
   for (let i = 0; start + i * step < max - 1e-9; i++) {
@@ -104,7 +145,7 @@ function histogram(xs: number[]): Bin[] {
   for (const x of xs) {
     bins[Math.min(bins.length - 1, Math.floor((x - start) / step + 1e-9))].count++;
   }
-  return bins.map((b) => ({ ...b, pct: b.count / xs.length }));
+  return bins.map((b) => ({ ...b, pct: b.count / n }));
 }
 
 // 这道数值题的有效取值；后台线程重抽样时用，与 computeStat 取同一批数。
@@ -242,8 +283,7 @@ export function buildFindings(rows: Record<string, string>[], questions: Questio
     .forEach((q, i) => {
       const s = stats?.[q.id] ?? computeStat(q, rows);
       if (s.n === 0) return;
-      const note = sampleNote(s.n);
-      const tail = note ? `${note}。` : '';
+      const tail = '';
       if (s.kind === 'scale' && s.mean !== null) {
         candidates.set('scale', [...(candidates.get('scale') ?? []), { order: i, text: `「${q.title}」平均 ${withCI(`${formatNumber(s.mean, 2)} 分`, s.meanCI, 2)}${s.top2 !== null ? `，${withPctCI(`${formatPct(s.top2)} 的受访者给出了较高的两档评分`, s.top2CI)}` : ''}。${tail}` }]);
       } else if (s.kind === 'single' && s.options.length > 1 && s.options[0].pct < 0.95) {

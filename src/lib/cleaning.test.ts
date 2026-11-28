@@ -200,3 +200,22 @@ test('questionnaires are named by the index column, or by row number when there 
   );
   assert.deepEqual(rowLabels(noIndex), { labels: ['第 1 行', '第 2 行'], fromRowNumber: true });
 });
+
+
+test('zeroMissing recodes 0 to missing and keeps every row', () => {
+  const ds = buildDataset(
+    [
+      ['序号', 'Q'],
+      ['1', '0'],
+      ['2', '3'],
+    ],
+    'zero.csv',
+    'UTF-8',
+  );
+  const cleaning: Cleaning = { rules: [], includeFlagged: true, overrides: {}, zeroMissing: true };
+  assert.equal(hasCleaning(cleaning), true);
+  const rows = analysisRows({ ...ds, cleaning });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].Q, '');
+  assert.equal(rows[1].Q, '3');
+});

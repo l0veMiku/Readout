@@ -35,7 +35,7 @@ function Row({ checked, onToggle, title, why, children }: RowProps) {
 // bare 用于弹窗里：不再套一层卡片边框，宽度跟随弹窗。
 export function ProModePanel({ pro, onChange, bare }: { pro: ProModeOptions; onChange: (next: ProModeOptions) => void; bare?: boolean }) {
   const set = <K extends keyof ProModeOptions>(key: K, value: ProModeOptions[K]) => onChange({ ...pro, [key]: value });
-  const toggle = (key: 'effectSize' | 'alphaCI' | 'apaTables' | 'spearman' | 'rankTest' | 'scoreForms' | 'factorCheck') => set(key, !pro[key]);
+  const toggle = (key: 'effectSize' | 'alphaCI' | 'apaTables' | 'spearman' | 'rankTest' | 'scoreForms' | 'factorCheck' | 'continuity') => set(key, !pro[key]);
   const distributionOn = pro.distribution || pro.missingTable;
   const toggleDistribution = () => {
     // 偏度/峰度与缺失率是同一个报告小节，一起开关。
@@ -95,6 +95,12 @@ export function ProModePanel({ pro, onChange, bare }: { pro: ProModeOptions; onC
           </details>
           <details className="pro-group">
             <summary>B 档 · 进阶</summary>
+            <Row
+              checked={pro.continuity}
+              onToggle={() => toggle('continuity')}
+              title="2×2 卡方连续性校正（Yates）"
+              why="R 的 chisq.test 与 SPSS 交叉表默认对 2×2 表做 Yates 校正；打开后 p 值更保守。默认关闭时使用 Pearson 卡方。"
+            />
             <Row
               checked={pro.spearman}
               onToggle={() => toggle('spearman')}

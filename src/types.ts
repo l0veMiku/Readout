@@ -46,6 +46,8 @@ export type CleaningRule =
 export interface Cleaning {
   rules: CleaningRule[];
   includeFlagged: boolean;
+  // 把所有题里取值为 "0" 的回答当作缺失；平台常把未作答导出成 0。
+  zeroMissing?: boolean;
   // 单份例外，键是数据行号：keep 留下被规则剔除的问卷，drop 手动剔除。
   overrides: Record<number, 'keep' | 'drop'>;
 }
@@ -89,6 +91,8 @@ export interface ProModeOptions {
   rankTest: boolean;
   scoreForms: boolean;
   factorCheck: boolean;
+  // 2×2 卡方的 Yates 连续性校正（与 R/SPSS 默认一致）；默认关，保持 Pearson 口径。
+  continuity: boolean;
 }
 
 export const PRO_MODE_OFF: ProModeOptions = {
@@ -103,6 +107,7 @@ export const PRO_MODE_OFF: ProModeOptions = {
   rankTest: false,
   scoreForms: false,
   factorCheck: false,
+  continuity: false,
 };
 
 // 打开专业模式时的默认状态：A 档整套启用，B 档逐项自选。

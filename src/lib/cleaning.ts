@@ -62,7 +62,7 @@ export function ruleReady(rule: CleaningRule): boolean {
 
 // 没有生效的规则、也没有单份例外时，清洗设置等于不存在。
 export function hasCleaning(cleaning: Cleaning | undefined): boolean {
-  return !!cleaning && (cleaning.rules.some(ruleReady) || Object.keys(cleaning.overrides).length > 0);
+  return !!cleaning && (cleaning.rules.some(ruleReady) || !!cleaning.zeroMissing || Object.keys(cleaning.overrides).length > 0);
 }
 
 const DURATION_HEADER = /^(?:所用时间|答题时长|答卷时长|作答时长|填写时长|用时|耗时|duration(?:\s*\(s\))?)$/i;
@@ -252,7 +252,13 @@ export function analysisRows(dataset: Dataset): Record<string, string>[] {
   const cleaning = dataset.cleaning;
   if (!cleaning || !hasCleaning(cleaning)) return dataset.rows;
   const { status } = evaluateCleaning(dataset);
-  return dataset.rows.filter((_, ri) => status[ri] === 'valid' || (status[ri] === 'flagged' && cleaning.includeFlagged));
+  const kept = dataset.rows.filter((_, ri) => status[ri] === 'valid' || (status[ri] === 'flagged' && cleaning.includeFlagged));
+  if (!cleaning.zeroMissing) return kept;
+  return kept.map((row) => {
+    const next = { ...row };
+    for (const key of Object.keys(next)) if ((next[key] ?? '').trim() === '0') next[key] = '';
+    return next;
+  });
 }
 
 export function ruleLabel(rule: CleaningRule, dataset: Dataset): string {

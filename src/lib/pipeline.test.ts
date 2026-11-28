@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { Question, QuestionType } from '../types.ts';
-import { inferType, splitMultiDetailed } from './infer.ts';
+import { inferQuestions, inferType, splitMultiDetailed } from './infer.ts';
 import { buildDataset, decodeText, parseGrid, parseWorkbook } from './parse.ts';
 import { buildFindings, computeStat, numericSamples, sampleNote, withBootstrap } from './stats.ts';
 import { bootstrapIntervals } from './intervals.ts';
@@ -83,6 +83,16 @@ test('scale, numeric and open stats follow the documented definitions', () => {
   const neg = computeStat(mk('numeric'), rowsOf(['-5', '-4', '-1', '0', '2']));
   if (neg.kind !== 'numeric') return;
   assert.deepEqual(neg.bins.map((b) => b.name), ['-5 至 -4', '-4 至 -3', '-3 至 -2', '-2 至 -1', '-1 至 0', '0–1', '1–2']);
+
+  // 极端值单独归到两端，不把 0–100000 拉成十段。
+  const values = Array.from({ length: 50 }, (_, i) => String(i + 1));
+  const outlier = computeStat(mk('numeric'), rowsOf([...values, '100000']), { shape: true });
+  if (outlier.kind !== 'numeric') return;
+  assert.equal(outlier.bins.reduce((s, b) => s + b.count, 0), 51);
+  assert.ok(outlier.bins[outlier.bins.length - 1].name.startsWith('≥'), '高处极端值有独立分箱');
+  assert.ok(!outlier.bins.some((b) => b.name.includes('100000')));
+  assert.equal(outlier.shape?.outliers?.n, 1);
+  assert.equal(outlier.shape?.outliers?.max, 100000);
 
   const open = computeStat(mk('open'), rowsOf(['很好用', '', '一般般吧']));
   assert.equal(open.kind, 'open');
@@ -239,6 +249,32 @@ test('inference rules for typical survey exports', () => {
   assert.equal(inferType('5、您有什么建议', rep(['希望多开课', '加强指导老师培训'])), 'open');
   assert.equal(inferType('来自IP', rep(['1.2.3.4', '5.6.7.8'])), 'meta');
   assert.equal(inferType('6、其他', ['', '-']), 'single');
+  // 短开放回答：题干像开放题、每条都不同，不能因为取值少就当单选。
+  assert.equal(inferType('您希望 AI 改进什么', ['更准确', '少一点套话', '速度', '引用要准']), 'open');
+  assert.equal(inferType('您对课程的建议', ['多讲案例', '作业少一点', '节奏慢一点']), 'open');
+  // 名义型单选即使题干有「什么/哪些」也不误判。
+  assert.equal(inferType('您通常使用什么品牌的手机', ['华为', '小米', '苹果', 'OPPO']), 'single');
+});
+
+test('numeric 1-5 batteries become a scale, lone coded columns stay single', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => {
+    const v = String((i % 4) + 1);
+    return {
+      Q1: v,
+      Q2: String(((i + 1) % 4) + 1),
+      Q3: String(((i + 2) % 4) + 1),
+      Q4: String(((i + 3) % 4) + 1),
+      grade: String((i % 4) + 1),
+      '第5题（单选）': String((i % 4) + 1),
+    };
+  });
+  const { questions } = inferQuestions(['Q1', 'Q2', 'Q3', 'Q4', 'grade', '第5题（单选）'], rows);
+  assert.deepEqual(questions.slice(0, 4).map((q) => q.type), ['scale', 'scale', 'scale', 'scale']);
+  assert.equal(questions[4].type, 'single', '单列 1-4 仍按编码单选');
+  assert.equal(questions[5].type, 'single', '显式单选不提升');
+
+  const onlyTwo = inferQuestions(['Q1', 'Q2'], rows).questions;
+  assert.deepEqual(onlyTwo.map((q) => q.type), ['single', 'single'], '不足三列不成组');
 });
 
 test('explicit type markers beat keyword heuristics, and open text keeps its semicolons', () => {

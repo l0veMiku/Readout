@@ -11,6 +11,11 @@ const NUMERIC_HINT = /金额|费用|价格|多少钱|多少元|支付|年龄|时
 const OPEN_HINT = /建议|原因|为何|为什么|什么问题|问题是什么|什么建议|期待|期望|看法|意见|想法|评价|说明|描述|谈谈|留言|补充|理由|感受|吐槽|访谈|想一想|写一写|请输入|请填写|请说明|简述|简要|怎么|如何|哪些|请列举|请具体/;
 const STRONG_OPEN = /建议|原因|为何|为什么|什么问题|问题是什么|什么建议|期待|期望|看法|意见|想法|评价|说明|描述|谈谈|留言|补充|理由|感受|吐槽|访谈|想一想|写一写|请说明|简述|简要|怎么|如何/;
 
+// 题干像开放题、但值可能很短（例如一句建议只有几个字）。不能只靠 distinct > 20 判断。
+const OPEN_INTENT = /建议|意见|改进|原因|为何|为什么|期望|期待|看法|意见|想法|描述|说明|补充|其他.*注明|感受|吐槽|什么|哪些|如何|怎么/;
+// 常见的名义型单选，避免被 OPEN_INTENT 里的「什么/哪些」带到开放题。
+const NOMINAL_HINT = /性别|年级|学历|城市|地区|专业|职业|部门|渠道|类型|是否|有没有|哪一|哪个|哪款|哪种|品牌|平台|来源|身份|婚姻|户口|民族|\b(?:grade|year|class|gender|sex|city|region|major|job|department|channel|type|brand|platform|source|level)\b/i;
+
 const MULTI_SEP = /[;；|┋]/;
 const OTHER_NOTE = /^(.*?)\s*[〖\[［]([^〖〗\[\]［］]*)[〗\]］]\s*$/;
 
@@ -140,6 +145,12 @@ export function inferType(rawTitle: string, values: string[], opts: { grouped?: 
 
   if (numericRatio >= 0.9 && (NUMERIC_HINT.test(title) || distinct.size > 12)) return 'numeric';
 
+  // 题干明显在问建议/原因/描述，且几乎每条回答都不一样：即使很短也按开放题。
+  if (OPEN_INTENT.test(title) && !NOMINAL_HINT.test(title)) {
+    const repeat = valid.length === 0 ? 0 : distinct.size / valid.length;
+    if (repeat >= 0.8 && avgLen >= 2) return 'open';
+  }
+
   // 选项很少或反复出现同一批短标签时是选择题，不是开放题。
   if (distinct.size <= 10) return 'single';
   if (avgLen < 6 && repeat < 0.5) return 'single';
@@ -184,5 +195,28 @@ export function inferQuestions(headers: string[], rows: Record<string, string>[]
       ...(groupId ? { groupId } : {}),
     };
   });
+  promoteNumericBattery(questions, rows);
   return { questions, groups };
+}
+
+// 数字编码的 1–5 量表：单独一列时与「按选项序号导出」的选择题无法区分，
+// 但同一份问卷里连续出现三列以上、取值范围相同的整数题，基本是同一套量表。
+// 显式写了「单选」或题干是常见名义变量的列不提升。
+function promoteNumericBattery(questions: Question[], rows: Record<string, string>[]) {
+  const buckets = new Map<string, Question[]>();
+  for (const q of questions) {
+    if (q.type !== 'single' || SINGLE_HINT.test(q.rawTitle) || NOMINAL_HINT.test(q.title)) continue;
+    const values = rows.map((r) => r[q.id]).filter(isAnswer);
+    if (values.length === 0) continue;
+    const nums = numericValues(values);
+    if (nums.length !== values.length || !nums.every((n) => Number.isInteger(n))) continue;
+    const distinct = [...new Set(nums)].sort((a, b) => a - b);
+    if (distinct.length < 3 || distinct.length > 5 || distinct[0] < 1 || distinct[distinct.length - 1] > 5) continue;
+    const key = distinct.join(',');
+    buckets.set(key, [...(buckets.get(key) ?? []), q]);
+  }
+  for (const list of buckets.values()) {
+    if (list.length < 3) continue;
+    for (const q of list) q.type = 'scale';
+  }
 }

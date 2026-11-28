@@ -36,7 +36,7 @@ test('issues cover missing, skew, low alpha, KMO and unmarked reverse items', ()
     c: stat(30),
   } as never;
   const reliabilities = {
-    g1: { items: [{ id: 'b', citc: 0.5, alphaIfDeleted: null }, { id: 'c', citc: -0.4, alphaIfDeleted: null }], n: 30, partial: 0, alpha: 0.62, range: { min: 1, max: 5 }, note: null },
+    g1: { items: [{ id: 'b', citc: 0.5, alphaIfDeleted: null, alphaIfReversed: 0.5 }, { id: 'c', citc: -0.4, alphaIfDeleted: null, alphaIfReversed: 0.8 }], n: 30, partial: 0, alpha: 0.62, range: { min: 1, max: 5 }, note: null },
   } as never;
   const extras = {
     g1: { n: 30, alphaCI: { lower: 0.4, upper: 0.8 }, kmo: 0.55, bartlett: { chi2: 100, df: 1, p: 0.001 }, omega: 0.6, notes: [] },

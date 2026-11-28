@@ -11,7 +11,7 @@ interface CleaningPanelProps {
   onApply: (cleaning: Cleaning | undefined) => void;
 }
 
-const EMPTY: Cleaning = { rules: [], includeFlagged: true, overrides: {} };
+const EMPTY: Cleaning = { rules: [], includeFlagged: true, overrides: {}, zeroMissing: false };
 
 export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps) {
   const [draft, setDraft] = useState<Cleaning>(() => dataset.cleaning ?? EMPTY);
@@ -182,6 +182,10 @@ export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps)
 
   return (
     <div className="ai-form clean-form">
+      <label className="inline">
+        <input type="checkbox" checked={!!draft.zeroMissing} onChange={(e) => patch({ zeroMissing: e.target.checked })} />
+        把 0 当作缺失（所有题）
+      </label>
       {duration && (
         <p className="hint">
           时长列「{duration.title}」按秒处理

@@ -31,6 +31,7 @@ export interface ShapeRow {
   skewSE: number;
   kurtosis: number;
   kurtosisSE: number;
+  outliers: { n: number; min: number; max: number } | null;
   cardIndex: number;
 }
 
@@ -38,7 +39,7 @@ export interface GroupRow {
   id: string;
   title: string;
   cardIndex: number;
-  questions: { id: string; name: string; reversed: boolean; citc: number | null }[];
+  questions: { id: string; name: string; reversed: boolean; citc: number | null; alphaIfReversed: number | null }[];
   alpha: number | null;
   alphaCI: Interval | null;
   complete: number | null;
@@ -87,8 +88,9 @@ export function buildDiagnostics(input: {
   stats: Record<string, Stat>;
   reliabilities: Record<string, Reliability | null>;
   extras: Record<string, ReliabilityExtras | null>;
+  rows?: Record<string, string>[];
 }): Diagnostics {
-  const { items, stats, reliabilities, extras } = input;
+  const { items, stats, reliabilities, extras, rows = [] } = input;
   const cardIndexOf = new Map<string, number>();
   items.forEach((item, i) => {
     if (item.kind === 'group') {
@@ -110,7 +112,7 @@ export function buildDiagnostics(input: {
   const shapes: ShapeRow[] = questions.flatMap((q) => {
     const stat = stats[q.id];
     if (!stat || (stat.kind !== 'scale' && stat.kind !== 'numeric') || !stat.shape) return [];
-    return [{ id: q.id, name: q.subTitle ?? q.title, n: stat.shape.n, skew: stat.shape.skew, skewSE: stat.shape.skewSE, kurtosis: stat.shape.kurtosis, kurtosisSE: stat.shape.kurtosisSE, cardIndex: cardIndexOf.get(q.id) ?? 0 }];
+    return [{ id: q.id, name: q.subTitle ?? q.title, n: stat.shape.n, skew: stat.shape.skew, skewSE: stat.shape.skewSE, kurtosis: stat.shape.kurtosis, kurtosisSE: stat.shape.kurtosisSE, outliers: stat.shape.outliers ?? null, cardIndex: cardIndexOf.get(q.id) ?? 0 }];
   });
 
   const groups: GroupRow[] = items.flatMap((item) => {
@@ -123,7 +125,7 @@ export function buildDiagnostics(input: {
         id: item.group.id,
         title: item.group.title,
         cardIndex: cardIndexOf.get(`group:${item.group.id}`) ?? 0,
-        questions: item.questions.map((q) => ({ id: q.id, name: q.subTitle ?? q.title, reversed: !!q.reversed, citc: citcOf.get(q.id) ?? null })),
+        questions: item.questions.map((q) => ({ id: q.id, name: q.subTitle ?? q.title, reversed: !!q.reversed, citc: citcOf.get(q.id) ?? null, alphaIfReversed: rel?.items.find((it) => it.id === q.id)?.alphaIfReversed ?? null })),
         alpha: rel?.alpha ?? null,
         alphaCI: ext?.alphaCI ?? null,
         complete: rel?.n ?? null,
@@ -136,13 +138,39 @@ export function buildDiagnostics(input: {
   });
 
   const issues: DiagnosticIssue[] = [];
+  // 0 既可能是合法取值，也可能是「未作答」的编码；只提示，不替用户改数据。
+  for (const q of questions) {
+    if (q.derived || (q.type !== 'single' && q.type !== 'scale' && q.type !== 'numeric')) continue;
+    let zero = 0;
+    for (const r of rows) if ((r[q.id] ?? '').trim() === '0') zero++;
+    if (zero === 0) continue;
+    issues.push({
+      level: 'info',
+      title: `「${q.subTitle ?? q.title}」有 ${zero} 条回答是 0`,
+      detail: '如果原问卷不用 0，它可能是「未作答」的编码；现在会按正常取值参与均值或占比，请先在清洗里确认。',
+      cardIndex: cardIndexOf.get(q.id) ?? 0,
+    });
+  }
   for (const g of groups) {
     if (g.alpha !== null && g.alpha < 0.7) {
       issues.push({ level: g.alpha < 0.5 ? 'alert' : 'warn', title: `题组「${g.title}」α = ${g.alpha.toFixed(3)}`, detail: '常见参考 0.70；α 低通常意味着题目不属于同一维度，或反向题没有标记。', cardIndex: g.cardIndex });
     }
-    for (const q of g.questions) {
-      if (!q.reversed && q.citc !== null && q.citc < -0.2) {
-        issues.push({ level: 'alert', title: `「${q.name}」可能是反向题`, detail: `它与题组其余题之和负相关（r = ${q.citc.toFixed(2)}），建议在卡片里标为反向后重算信度。`, cardIndex: g.cardIndex });
+    if (g.alpha !== null) {
+      const candidates = g.questions
+        .filter(
+          (q) =>
+            !q.reversed &&
+            q.citc !== null &&
+            q.citc < 0 &&
+            q.alphaIfReversed !== null &&
+            q.alphaIfReversed !== undefined &&
+            g.alpha! > 0 &&
+            q.alphaIfReversed - g.alpha! >= 0.02,
+        )
+        .sort((a, b) => (b.alphaIfReversed! - g.alpha!) - (a.alphaIfReversed! - g.alpha!))
+        .slice(0, 3);
+      for (const q of candidates) {
+        issues.push({ level: 'alert', title: `「${q.name}」可能是反向题`, detail: `翻转后 α 从 ${g.alpha.toFixed(3)} 升到 ${q.alphaIfReversed!.toFixed(3)}，建议在卡片里标为反向。`, cardIndex: g.cardIndex });
       }
     }
     if (g.kmo !== null) {
@@ -160,6 +188,7 @@ export function buildDiagnostics(input: {
   for (const s of shapes) {
     if (Math.abs(s.skew) > 1) issues.push({ level: 'warn', title: `「${s.name}」偏度 ${s.skew.toFixed(2)}`, detail: '偏度绝对值超过 1，明显偏态；均值差与 t 区间要谨慎，可考虑秩检验。', cardIndex: s.cardIndex });
     else if (Math.abs(s.kurtosis) > 2) issues.push({ level: 'warn', title: `「${s.name}」峰度 ${s.kurtosis.toFixed(2)}`, detail: '峰度绝对值超过 2，尾部较重；区间与显著性判断要保守。', cardIndex: s.cardIndex });
+    if (s.outliers) issues.push({ level: 'warn', title: `「${s.name}」有 ${s.outliers.n} 个极端值`, detail: `最小值 ${s.outliers.min}、最大值 ${s.outliers.max}；图表已把超出 Q1−3×IQR 至 Q3+3×IQR 的值单独归入两端，均值和区间可能被拉偏，建议在清洗里核对。`, cardIndex: s.cardIndex });
   }
   // 组内题目取值范围不一致（原卡片已有 blocker 文案，这里只作为提示列出）。
   for (const item of items) {

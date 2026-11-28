@@ -241,7 +241,7 @@ export default function App() {
     }
   }, [analysis, stats, scoredRows, baseRows, pro.distribution]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
-  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows, pro) : null), [analysis, pick, scoredRows, pro.on, pro.correction, pro.rankTest]);
+  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows, pro) : null), [analysis, pick, scoredRows, pro.on, pro.correction, pro.rankTest, pro.continuity]);
   const corr = useMemo(() => (analysis ? correlationFor(analysis, corrVars, scoredRows, { adjust: pro.correction, rank: pro.spearman }) : null), [analysis, corrVars, scoredRows, pro.correction, pro.spearman]);
   // 选的题被忽略、改了题型或被移除后，相关分析的变量跟着去掉。
   useEffect(() => {
@@ -340,8 +340,8 @@ export default function App() {
   // 卡片顺序与工作台一致，诊断里的「查看」用它跳回对应卡片。
   const cardItems = useMemo(() => (analysis ? includedItems(analysis) : []), [analysis]);
   const diagnostics = useMemo(
-    () => (analysis ? buildDiagnostics({ dataset: analysis, items: cardItems, stats, reliabilities, extras }) : null),
-    [analysis, cardItems, stats, reliabilities, extras],
+    () => (analysis ? buildDiagnostics({ dataset: analysis, items: cardItems, stats, reliabilities, extras, rows: baseRows }) : null),
+    [analysis, cardItems, stats, reliabilities, extras, baseRows],
   );
   // 顶栏按钮上的启用项数，以及报告顶部的一行摘要（让“打开后报告变了什么”一眼可见）。
   const proCount = [
@@ -354,6 +354,7 @@ export default function App() {
     pro.rankTest,
     pro.scoreForms,
     pro.factorCheck,
+    pro.continuity,
   ].filter(Boolean).length;
   const proSummary = pro.on
     ? [
@@ -366,6 +367,7 @@ export default function App() {
         pro.rankTest ? '秩检验' : '',
         pro.scoreForms ? '得分形式' : '',
         pro.factorCheck ? 'KMO / ω' : '',
+        pro.continuity ? 'Yates' : '',
       ].filter(Boolean)
     : [];
 

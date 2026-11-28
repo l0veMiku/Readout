@@ -53,7 +53,7 @@ export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null, row
   if (!pick?.group || !pick.compare || !pickStillValid(dataset, pick)) return null;
   const g = dataset.questions.find((q) => q.id === pick.group);
   const c = dataset.questions.find((q) => q.id === pick.compare);
-  const comparison = g && c ? compareQuestions(g, c, rows, { deferBootstrap: true }) : null;
+  const comparison = g && c ? compareQuestions(g, c, rows, { deferBootstrap: true, yates: pro.continuity }) : null;
   return comparison ? withProMode(comparison, pro) : null;
 }
 

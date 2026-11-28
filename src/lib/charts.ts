@@ -74,6 +74,17 @@ const tooltip = (total: number): TooltipComponentOption => ({
   },
 });
 
+// 高基数单选题（如国家/城市）不把整页拉成几屏：只画前 max−1 项，其余合并成「其他 n 项」。
+// 合并项没有可加的置信区间，ci 置空；表格仍保留全部选项。
+export function capBars(rows: BarRow[], max = 12): { rows: BarRow[]; omitted: number } {
+  if (rows.length <= max) return { rows, omitted: 0 };
+  const head = rows.slice(0, max - 1);
+  const tail = rows.slice(max - 1);
+  const count = tail.reduce((s, r) => s + r.count, 0);
+  const pct = tail.reduce((s, r) => s + r.pct, 0);
+  return { rows: [...head, { name: `其他 ${tail.length} 项`, count, pct, ci: null }], omitted: tail.length };
+}
+
 export function horizontalBars(rows: BarRow[]): { option: ChartOption; height: number } {
   const data = [...rows].reverse();
   const top = Math.max(0, ...rows.map((r) => (r.ci && r.pct > 0 ? (r.count / r.pct) * r.ci.upper : r.count)));

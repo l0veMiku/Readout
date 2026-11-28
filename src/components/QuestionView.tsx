@@ -8,7 +8,7 @@ import { sampleNote, withCI, withPctCI } from '../lib/stats.ts';
 import type { Reliability } from '../lib/reliability.ts';
 import { SCORE_MISSING_LABELS } from '../lib/scores.ts';
 import type { ScoreState } from '../lib/scores.ts';
-import { horizontalBars, meanIntervals, verticalBars } from '../lib/charts.ts';
+import { capBars, horizontalBars, meanIntervals, verticalBars } from '../lib/charts.ts';
 import { ciDigits, formatCI, formatDateTime, formatNumber, formatPct, formatPctCI } from '../lib/text.ts';
 import { QUESTION_TYPES, TYPE_LABELS } from '../types.ts';
 import type { AIResult, Question, QuestionGroup, QuestionType, ScoreMissing } from '../types.ts';
@@ -25,15 +25,21 @@ export function CIRange({ ci, digits = 1, pct = false, pending = false }: { ci: 
 function ChartFor({ stat }: { stat: Stat }) {
   // 数值题的区间在后台补上时 bins 不变，图表不必重建。
   const chartKey = stat.kind === 'numeric' ? stat.bins : stat;
+  const bars = useMemo(() => (stat.kind === 'single' || stat.kind === 'multi' ? capBars(stat.options) : null), [chartKey]);
   const built = useMemo(() => {
-    if (stat.kind === 'single' || stat.kind === 'multi') return stat.options.length ? horizontalBars(stat.options) : null;
+    if (bars) return bars.rows.length ? horizontalBars(bars.rows) : null;
     if (stat.kind === 'scale') return stat.levels.length ? verticalBars(stat.levels, { mean: stat.numeric ? stat.mean : null }) : null;
     // 文本量表按类别轴画分布，均值只出现在结论句和指标里。
     if (stat.kind === 'numeric') return stat.bins.length ? verticalBars(stat.bins, { rotate: true }) : null;
     return null;
-  }, [chartKey]);
+  }, [bars, chartKey]);
   if (!built) return null;
-  return <Chart option={built.option} height={built.height} />;
+  return (
+    <>
+      <Chart option={built.option} height={built.height} />
+      {bars && bars.omitted > 0 && <p className="chart-note">图表只画前 12 项，其余 {bars.omitted} 项见下方表格。</p>}
+    </>
+  );
 }
 
 function chips(stat: Stat): [string, string][] {
@@ -49,19 +55,35 @@ function chips(stat: Stat): [string, string][] {
     case 'scale':
       return stat.mean === null
         ? [['档位数', String(stat.levels.length)]]
-        : [
-            ['均值', formatNumber(stat.mean, 2)],
-            ['95% 区间', formatCI(stat.meanCI, 2)],
-            ['中位数', formatNumber(stat.median, 2)],
-            ['标准差', formatNumber(stat.sd, 2)],
-            ...(stat.top2 !== null ? ([['Top-2 占比', formatPct(stat.top2)]] as [string, string][]) : []),
-          ];
+        : (() => {
+            const levelValues = stat.levels.map((l) => Number(l.name)).filter((x) => Number.isFinite(x));
+            const outside =
+              !!stat.meanCI &&
+              levelValues.length > 0 &&
+              (stat.meanCI.lower < Math.min(...levelValues) || stat.meanCI.upper > Math.max(...levelValues));
+            return [
+              ['均值', formatNumber(stat.mean, 2)],
+              ['95% 区间', `${formatCI(stat.meanCI, 2)}${outside ? '（可超出刻度）' : ''}`],
+              ['中位数', formatNumber(stat.median, 2)],
+              ['标准差', formatNumber(stat.sd, 2)],
+              ...(stat.top2 !== null ? ([['Top-2 占比', formatPct(stat.top2)]] as [string, string][]) : []),
+            ];
+          })();
     case 'numeric':
       return stat.mean === null
         ? []
         : [
             ['均值', smartNumber(stat.mean)],
-            ['95% 区间', stat.ciPending ? '计算中' : formatCI(stat.meanCI, ciDigits(stat.mean))],
+            [
+              '95% 区间',
+              stat.ciPending
+                ? '计算中'
+                : `${formatCI(stat.meanCI, ciDigits(stat.mean))}${
+                    stat.meanCI && stat.min !== null && stat.max !== null && (stat.meanCI.lower < stat.min || stat.meanCI.upper > stat.max)
+                      ? '（区间可超出刻度）'
+                      : ''
+                  }`,
+            ],
             ['中位数', smartNumber(stat.median)],
             ['标准差', smartNumber(stat.sd)],
             ['范围', `${smartNumber(stat.min)} – ${smartNumber(stat.max)}`],
@@ -102,14 +124,17 @@ export function sentence(stat: Stat, derived = false) {
       }
       break;
   }
-  const note = sampleNote(stat.n);
-  return `${head}${parts.length ? `；${parts.join('，')}` : ''}。${note ? `${note}。` : ''}`;
+  return `${head}${parts.length ? `；${parts.join('，')}` : ''}。`;
 }
 
 function DistributionTable({ stat }: { stat: Stat }) {
   const rows = stat.kind === 'single' || stat.kind === 'multi' ? stat.options : stat.kind === 'scale' ? stat.levels : null;
+  const [expanded, setExpanded] = useState(false);
   if (rows) {
+    const LIMIT = 10;
+    const visible = rows.length > LIMIT && !expanded ? rows.slice(0, LIMIT) : rows;
     return (
+      <>
       <table className="dist">
         <thead>
           <tr>
@@ -119,7 +144,7 @@ function DistributionTable({ stat }: { stat: Stat }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {visible.map((r) => (
             <tr key={r.name}>
               <td>
                 {r.name}
@@ -144,6 +169,14 @@ function DistributionTable({ stat }: { stat: Stat }) {
           ))}
         </tbody>
       </table>
+      {rows.length > LIMIT && (
+        <p className="chart-note">
+          <button type="button" className="link" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? '收起' : `展开其余 ${rows.length - LIMIT} 项`}
+          </button>
+        </p>
+      )}
+      </>
     );
   }
   if (stat.kind === 'numeric' && stat.mean !== null) {
@@ -195,6 +228,23 @@ export function GroupBody({ questions, stats, reliability: rel, onToggleReversed
   }
   const chart = means.length >= 2 ? meanIntervals(means) : null;
   const itemResults = new Map(rel?.items.map((it) => [it.id, it]) ?? []);
+  // 只提示最有把握的 3 道，避免整列都是「可能是反向题」。
+  const suggestedReversed = new Set(
+    rel
+      ? rel.items
+          .filter(
+            (it) =>
+              it.alphaIfReversed !== null &&
+              it.alphaIfReversed !== undefined &&
+              rel.alpha !== null &&
+              rel.alpha > 0 &&
+              it.alphaIfReversed - rel.alpha >= 0.02,
+          )
+          .sort((a, b) => (b.alphaIfReversed! - rel.alpha!) - (a.alphaIfReversed! - rel.alpha!))
+          .slice(0, 3)
+          .map((it) => it.id)
+      : [],
+  );
   const anyReversed = questions.some((q) => q.reversed);
   return (
     <>
@@ -233,7 +283,9 @@ export function GroupBody({ questions, stats, reliability: rel, onToggleReversed
                       <button className="link" onClick={() => onToggleReversed(q.id)}>
                         {q.reversed ? '取消反向' : '标为反向'}
                       </button>
-                      {!q.reversed && item.citc !== null && item.citc < 0 && <span className="reverse-hint">与其余题目负相关，可能是反向计分题</span>}
+                      {!q.reversed && item.citc !== null && item.citc < 0 && suggestedReversed.has(q.id) && (
+                        <span className="reverse-hint">翻转后 α 会提高，可能是反向计分题</span>
+                      )}
                     </span>
                   )}
                 </td>

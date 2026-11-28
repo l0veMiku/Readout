@@ -76,7 +76,7 @@ export interface ChisqResult {
   lowCells: number;
 }
 
-export function chisqTest(table: number[][]): ChisqResult | null {
+export function chisqTest(table: number[][], yates = false): ChisqResult | null {
   const cols = table[0]?.length ?? 0;
   const rowTotals = table.map((r) => r.reduce((s, x) => s + x, 0));
   const colTotals = Array.from({ length: cols }, (_, j) => table.reduce((s, r) => s + r[j], 0));
@@ -91,7 +91,9 @@ export function chisqTest(table: number[][]): ChisqResult | null {
     row.forEach((o, j) => {
       if (colTotals[j] === 0) return;
       const e = (rowTotals[i] * colTotals[j]) / total;
-      statistic += ((o - e) ** 2) / e;
+      // Yates：2×2 且所有期望频数 > 0 时，用 (|O−E|−0.5)²/E。
+      const delta = yates && table.length === 2 && row.length === 2 ? Math.max(0, Math.abs(o - e) - 0.5) : o - e;
+      statistic += (delta * delta) / e;
       minExpected = Math.min(minExpected, e);
       cells++;
       if (e < 5) low++;
@@ -130,6 +132,7 @@ export function fisherTwoRows(first: number[], colTotals: number[]): number | nu
 
 export interface TestResult extends ChisqResult {
   method: 'chisq' | 'fisher';
+  yates?: boolean;
   unreliable: boolean;
   // Cramér's V（2×2 表即 φ）；不足两行两列时为 null。
   effect: number | null;
@@ -137,8 +140,9 @@ export interface TestResult extends ChisqResult {
   pAdjusted?: number;
 }
 
-export function independenceTest(table: number[][]): TestResult | null {
-  const cs = chisqTest(table);
+export function independenceTest(table: number[][], opts: { yates?: boolean } = {}): TestResult | null {
+  const yates = !!opts.yates && table.length === 2 && (table[0]?.length ?? 0) === 2;
+  const cs = chisqTest(table, yates);
   if (!cs) return null;
   let method: 'chisq' | 'fisher' = 'chisq';
   let p = cs.p;
@@ -154,12 +158,16 @@ export function independenceTest(table: number[][]): TestResult | null {
       unreliable = true;
     }
   }
-  return { ...cs, method, p, unreliable, effect: cramersV(table) };
+  return { ...cs, method, yates, p, unreliable, effect: cramersV(table) };
 }
 
 export function formatTest(test: TestResult): string {
   const p = test.pAdjusted !== undefined ? `校正后 p = ${formatP(test.pAdjusted)}（原 p = ${formatP(test.p)}）` : `p = ${formatP(test.p)}`;
-  const base = test.method === 'fisher' ? `Fisher 精确检验，${p}` : `卡方 = ${formatNumber(test.statistic, 2)}，df = ${test.df}，${p}`;
+  const base = test.method === 'fisher'
+    ? `Fisher 精确检验，${p}`
+    : `卡方 = ${formatNumber(test.statistic, 2)}，df = ${test.df}，${p}${
+        test.df === 1 ? (test.yates ? '（Yates 校正）' : '（Pearson，未做 Yates 校正）') : ''
+      }`;
   return `${base}${test.unreliable ? '（部分类别人数过少，检验结果仅供参考）' : ''}`;
 }
 
@@ -267,7 +275,7 @@ export function withMedianIntervals(comparison: Comparison, intervals: (Interval
   return merged;
 }
 
-export function compareQuestions(group: Question, compare: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean } = {}): Comparison | null {
+export function compareQuestions(group: Question, compare: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean; yates?: boolean } = {}): Comparison | null {
   if (!canCompare(group, compare)) return null;
   const picked = rows.filter((r) => isAnswer(r[group.id]) && isAnswer(r[compare.id]));
   const counts = new Map<string, number>();
@@ -352,11 +360,11 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
       const ci = newcombeInterval(count, groups[gi + 1].n, line[0], groups[0].n);
       return ci ? { diff: count / groups[gi + 1].n - line[0] / groups[0].n, lower: ci.lower, upper: ci.upper, p: null, d: null } : null;
     });
-    const test = !single && groups.length >= 2 ? independenceTest(groups.map((_, gi) => [line[gi], groups[gi].n - line[gi]])) : null;
+    const test = !single && groups.length >= 2 ? independenceTest(groups.map((_, gi) => [line[gi], groups[gi].n - line[gi]]), { yates: opts.yates }) : null;
     const parts = phrases(groups, diffs, ' 个百分点', pctPoints);
     return { name, cells, diffs, test, sentence: parts.length ? `「${name}」：${parts.join('；')}。` : `「${name}」：无法比较各组占比。` };
   });
-  const test = single && groups.length >= 2 ? independenceTest(groups.map((_, gi) => options.map(([, line]) => line[gi]))) : null;
+  const test = single && groups.length >= 2 ? independenceTest(groups.map((_, gi) => options.map(([, line]) => line[gi])), { yates: opts.yates }) : null;
   const flat = rowsOut.flatMap((r) => r.diffs);
   const found = flat.filter((d): d is Diff => d !== null && excludesZero(d));
   const rest = flat.length - found.length;

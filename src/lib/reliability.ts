@@ -6,6 +6,8 @@ export interface ReliabilityItem {
   id: string;
   citc: number | null;
   alphaIfDeleted: number | null;
+  // 仅把这道题翻转（其余保持现状）后的 α，用来判断是否值得提示反向。
+  alphaIfReversed?: number | null;
 }
 
 export interface Reliability {
@@ -141,6 +143,10 @@ export function reliability(items: Question[], rows: Record<string, string>[]): 
       id: q.id,
       citc: note === null ? correlation(cols[j], sumOfOthers(cols, j)) : null,
       alphaIfDeleted: alpha === null ? null : cronbachAlpha(cols.filter((_, ci) => ci !== j)),
+      alphaIfReversed:
+        alpha === null || !range
+          ? null
+          : cronbachAlpha(cols.map((c, ci) => (ci === j ? c.map((v) => range.min + range.max - v) : c))),
     })),
     n,
     partial,

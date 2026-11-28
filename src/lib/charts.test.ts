@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dotIntervals } from './charts.ts';
+import { capBars, dotIntervals } from './charts.ts';
 
 interface RenderedSeries {
   type: string;
@@ -50,4 +50,26 @@ test('rows grow taller as groups pile up', () => {
   const single = dotIntervals(series(1), Array(10).fill('x'), true).height;
   const crowded = dotIntervals(series(5), Array(10).fill('x'), true).height;
   assert.ok(crowded > single + 100, `${crowded} vs ${single}`);
+});
+
+const barRow = (i: number) => ({ name: `opt-${i}`, count: i + 1, pct: (i + 1) / 100, ci: null });
+
+test('capBars keeps the head, folds the tail into one row, and leaves CI empty', () => {
+  const rows = Array.from({ length: 20 }, (_, i) => barRow(i));
+  const capped = capBars(rows, 12);
+  assert.equal(capped.rows.length, 12);
+  assert.equal(capped.omitted, 9);
+  assert.equal(capped.rows[0].name, 'opt-0');
+  const other = capped.rows[11];
+  assert.equal(other.name, '其他 9 项');
+  assert.equal(other.ci, null);
+  assert.equal(other.count, rows.slice(11).reduce((s, r) => s + r.count, 0));
+  assert.equal(capped.rows.reduce((s, r) => s + r.count, 0), rows.reduce((s, r) => s + r.count, 0));
+});
+
+test('capBars leaves small questions untouched', () => {
+  const rows = Array.from({ length: 3 }, (_, i) => barRow(i));
+  const capped = capBars(rows, 12);
+  assert.equal(capped.rows, rows);
+  assert.equal(capped.omitted, 0);
 });
