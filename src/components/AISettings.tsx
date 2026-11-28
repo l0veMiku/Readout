@@ -91,7 +91,7 @@ export function AISettings({ initial, onSave, onClose }: { initial: AIConfig; on
         <input id="ai-key" type="password" value={config.apiKey} onChange={(e) => patch({ apiKey: e.target.value })} placeholder="sk-…" autoComplete="off" />
       </p>
       <p className="hint">
-        Key 只保存在当前标签页的会话里，关闭标签页即清除；接口地址和模型名保存在本机浏览器。只有你点击「归纳主题」时，该题的文本回答才会发送到你配置的服务商。接口地址必须使用 https://，本机调试可用 http://localhost。
+        Key 只保存在当前标签页的会话里，关闭标签页即清除。只有点击「归纳主题」时，该题的回答才会发送给你配置的服务商。
       </p>
       {error && <p className="alert">{error}</p>}
       {testResult && <p className="ok">{testResult}</p>}

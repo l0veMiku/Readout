@@ -50,7 +50,6 @@ export function ProModePanel({ pro, onChange, bare }: { pro: ProModeOptions; onC
           <input type="checkbox" checked={pro.on} onChange={(e) => onChange(e.target.checked ? PRO_MODE_ON : PRO_MODE_OFF)} />
           <span>专业模式</span>
         </label>
-        <span className="hint">论文口径：多重比较校正、效应量、分布描述与非参数检验。关闭时所有数字回到默认口径，报告与现在完全一致。</span>
       </header>
       {pro.on && (
         <div className="pro-groups">

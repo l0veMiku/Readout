@@ -154,9 +154,6 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                 <button type="button" className="btn small ghost" onClick={() => startTransition(() => setLimit((v) => v + PAGE))}>
                   再显示 {Math.min(PAGE, pairs.length - shown.length)} 对
                 </button>
-                <span className="hint">
-                  已列出 {shown.length} / {pairs.length} 对，报告里收录全部。
-                </span>
               </div>
             )}
           </div>
@@ -248,9 +245,6 @@ export function CorrelationPage({
             题目目录
           </button>
           <h1 className="page-title">相关分析</h1>
-          <p className="work-meta">
-            选两个以上数值题、量表题或维度得分；每一对只用两者都有作答的问卷，区间用 Fisher z 变换，区间不含 0 的系数加粗。
-          </p>
           {corr && (
             <p className="work-meta">
               {corr.variables.length} 个变量 · {corr.pairs.length} 对 · {clear} 对区间不含 0

@@ -132,22 +132,10 @@ export function Home({ onLoad, onDemo, resumeTitle, onResume }: HomeProps) {
       </section>
 
       <ul className="points">
-        <li>
-          <b>自动识题型</b>
-          <span>单选、多选、量表、数值、开放题，可随时手动改。</span>
-        </li>
-        <li>
-          <b>图表与关键发现</b>
-          <span>频数、分布、均值，开头就是能写进汇报的结论。</span>
-        </li>
-        <li>
-          <b>AI 读开放题</b>
-          <span>归纳主题并保留原文引用，用自己的 Key。</span>
-        </li>
-        <li>
-          <b>一键成报告</b>
-          <span>A4 排版，打印或另存为 PDF。</span>
-        </li>
+        <li><b>自动识题型</b></li>
+        <li><b>图表与关键发现</b></li>
+        <li><b>AI 读开放题</b></li>
+        <li><b>一键成报告</b></li>
       </ul>
 
       <footer className="home-foot">本地优先 · 开源 MIT · 刷新页面即清除数据</footer>

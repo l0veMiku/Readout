@@ -249,7 +249,6 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
               </tbody>
             </table>
           </div>
-          <p className="hint">一页汇总；逐题的原始出处仍是下面的题组/得分章节与「数据质量」。</p>
         </section>
       )}
 

@@ -198,9 +198,6 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison, pro =
     <div className="compare-wrap">
       <header className="work-head">
         <h1 className="page-title">交叉分析</h1>
-        <p className="work-meta">
-          按一道单选题分组，看另一道题在各组上是否有差别。差值都相对人数最多的一组给出，并附 95% 区间和检验结果。
-        </p>
         <div className="cmp-pickers">
           <label>
             <span>分组题</span>

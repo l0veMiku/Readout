@@ -537,7 +537,7 @@ export function OpenText({ question, stat, result, hasKey, onOpenSettings, onRun
           </div>
           {!hasKey && (
             <p className="hint">
-              还没有配置模型。使用你自己的 API Key（OpenAI 兼容接口），回答只会发送到你配置的服务商。
+              还没有配置模型。回答只会发送到你配置的服务商。
             </p>
           )}
           <div className="samples">

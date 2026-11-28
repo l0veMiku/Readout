@@ -182,7 +182,6 @@ export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps)
 
   return (
     <div className="ai-form clean-form">
-      <p className="hint">规则默认全部关闭。填好参数后先看命中份数，点「应用」才会影响统计；每条规则都可以选「仅标记」或「剔除」。</p>
       {duration && (
         <p className="hint">
           时长列「{duration.title}」按秒处理
@@ -249,7 +248,6 @@ export function CleaningPanel({ dataset, onClose, onApply }: CleaningPanelProps)
             <input type="checkbox" checked={draft.includeFlagged} onChange={(e) => patch({ includeFlagged: e.target.checked })} />
             分析时包含仅标记的问卷
           </label>
-          <p className="hint">不勾选时，被标记的问卷和被剔除的一样不进入统计，报告里会分别写明两类各有多少份。</p>
         </>
       )}
 

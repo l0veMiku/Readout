@@ -344,12 +344,6 @@ button {
   font-size: 15px;
 }
 
-.points span {
-  color: var(--ink-3);
-  font-size: 13.5px;
-  line-height: 1.6;
-}
-
 .home-foot {
   margin-top: auto;
   padding-top: 72px;
