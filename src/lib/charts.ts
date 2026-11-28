@@ -178,6 +178,69 @@ export function meanIntervals(rows: { name: string; value: number; ci: { lower: 
   return dotIntervals([{ name: '均值', points }], rows.map((r) => r.name), false);
 }
 
+// 多组均值对比：组放在类目轴上，保证每一行都有标签；均值用点，区间用短横线。
+export function meanBars(rows: { name: string; value: number; ci: { lower: number; upper: number } | null }[]): { option: ChartOption; height: number } {
+  const names = rows.map((r) => r.name);
+  const lows = rows.map((r) => (r.ci ? r.ci.lower : r.value));
+  const highs = rows.map((r) => (r.ci ? r.ci.upper : r.value));
+  const lo = Math.min(...lows);
+  const hi = Math.max(...highs);
+  const pad = Math.max(0.2, (hi - lo) * 0.08);
+  return {
+    height: rows.length * 36 + 40,
+    option: {
+      grid: { left: 4, right: 32, top: 8, bottom: 24, containLabel: true },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p) => {
+          const item = p as unknown as { data: { value: [number, string] } };
+          const [value, name] = item.data.value;
+          const row = rows.find((r) => r.name === name);
+          const ci = row?.ci ? `<br/>95% 区间 ${formatNum(row.ci.lower)}–${formatNum(row.ci.upper)}` : '';
+          return `${escapeHtml(name)}<br/>均值 <b>${formatNum(value)}</b>${ci}`;
+        },
+      },
+      xAxis: { type: 'value', min: lo - pad, max: hi + pad, axisLabel: { color: AXIS }, splitLine: { lineStyle: { color: GRID } } },
+      yAxis: {
+        type: 'category',
+        data: names,
+        inverse: true,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { color: '#1d2621', fontSize: 12, interval: 0, width: 180, overflow: 'truncate' },
+      },
+      series: [
+        {
+          type: 'scatter' as const,
+          symbolSize: 8,
+          itemStyle: { color: GREEN },
+          data: rows.map((r) => ({ value: [r.value, r.name] })),
+        },
+        ...rows.flatMap((r) =>
+          r.ci
+            ? [
+                {
+                  type: 'line' as const,
+                  data: [
+                    [r.ci.lower, r.name],
+                    [r.ci.upper, r.name],
+                  ],
+                  symbol: 'none',
+                  lineStyle: { color: '#7d8a82', width: 1.5, type: 'dashed' as const },
+                  silent: true,
+                },
+              ]
+            : [],
+        ),
+      ],
+    },
+  };
+}
+
+function formatNum(x: number) {
+  return String(Math.round(x * 100) / 100);
+}
+
 export interface DotPoint {
   row: number;
   value: number;
@@ -246,7 +309,7 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
         min: -0.5,
         max: rowLabels.length - 0.5,
         inverse: true,
-        axisLabel: { color: '#1d2621', fontSize: 13, margin: 8, formatter: (v: number) => (Number.isInteger(v) ? (rowLabels[v] ?? '') : '') },
+        axisLabel: { color: '#1d2621', fontSize: 12, margin: 8, interval: 0, formatter: (v: number) => (Number.isInteger(v) ? (rowLabels[v] ?? '') : '') },
         axisTick: { show: false },
         splitLine: { show: false },
       },

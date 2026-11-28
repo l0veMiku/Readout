@@ -61,11 +61,26 @@ export function withProMode(comparison: Comparison, pro: ProModeOptions): Compar
     const decided = decide(diffs, adjust);
     const opts: PhraseOptions = { rank: !!rank, adjust: !!adjust };
     const unit = comparison.compareKind === 'numeric' ? '' : ' 分';
-    const parts = decided.map((d, i) => (d ? phrase(comparison.groups[i + 1].name, d, unit, opts) : null)).filter((p): p is string => p !== null);
+    const allParts = decided
+      .map((d, i) => ({ d, part: d ? phrase(comparison.groups[i + 1].name, d, unit, opts) : null }))
+      .filter((x) => x.d !== null && !!x.part) as { d: Diff; part: string }[];
+    const parts = allParts
+      .sort((a, b) => Math.abs(b.d.diff) - Math.abs(a.d.diff))
+      .slice(0, 3)
+      .map((x) => x.part);
+    const omittedParts = allParts.length - parts.length;
     const anyClear = decided.some((d) => d?.clear);
     const method = [rank ? 'Mann–Whitney U 秩检验' : '', adjust ? `${CORRECTION_LABELS[adjust]} 校正` : ''].filter(Boolean).join('，');
-    const head = `各组在「${comparison.compareTitle}」上的${rank ? '分布' : '均值'}${anyClear ? '存在差别' : '没有看到明确差别'}（相对基准组「${comparison.groups[0].name}」${method ? `，${method}` : ''}）：`;
-    let sentence = comparison.groups.length < 2 ? '分组题只有一组有有效回答，无法比较差别。' : parts.length ? `${head}${parts.join('；')}。` : '各组的有效回答不足 2 条或取值完全相同，无法比较差别。';
+    const groupNote = comparison.omittedGroups
+      ? `分组题有 ${comparison.groups.length + comparison.omittedGroups} 类，只比较人数最多的 ${comparison.groups.length} 组（另有 ${comparison.omittedGroups} 组未纳入）；`
+      : '';
+    const head = `${groupNote}各组在「${comparison.compareTitle}」上的${rank ? '分布' : '均值'}${anyClear ? '存在差别' : '没有看到明确差别'}（相对基准组「${comparison.groups[0].name}」${method ? `，${method}` : ''}）：`;
+    let sentence =
+      comparison.groups.length < 2
+        ? '分组题只有一组有有效回答，无法比较差别。'
+        : parts.length
+          ? `${head}${parts.join('；')}${omittedParts > 0 ? `；其余 ${omittedParts} 组见表格` : ''}。`
+          : '各组的有效回答不足 2 条或取值完全相同，无法比较差别。';
     if (rank?.overall) sentence += `整体检验：Kruskal–Wallis H = ${formatNumber(rank.overall.h, 2)}，df = ${rank.overall.df}，p = ${formatP(rank.overall.p)}，ε² = ${formatNumber(rank.overall.epsilon2, 3)}。`;
     const m = decided.filter((d) => d && (d.rankP ?? d.p) !== null).length;
     return {

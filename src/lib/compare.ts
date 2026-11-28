@@ -8,6 +8,7 @@ import { formatNumber, formatP, formatRange, isAnswer } from './text.ts';
 
 const COMPARE_TYPES = new Set(['single', 'multi', 'scale', 'numeric']);
 const FISHER_MAX_TABLES = 2_000_000;
+const MAX_COMPARE_GROUPS = 8;
 
 export function canCompare(group: Question | null, compare: Question | null): boolean {
   return (
@@ -223,6 +224,8 @@ export interface Comparison {
   multi: boolean;
   n: number;
   groups: CompareGroup[];
+  // 分组题类别过多时只比较人数最多的 8 组；这里是未纳入的组数。
+  omittedGroups?: number;
   rows: CompareRow[];
   test: TestResult | null;
   sentence: string;
@@ -283,9 +286,12 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     const g = (r[group.id] ?? '').trim();
     counts.set(g, (counts.get(g) ?? 0) + 1);
   }
-  const groups: CompareGroup[] = [...counts.entries()]
+  const allGroups: CompareGroup[] = [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh'))
     .map(([name, n]) => ({ name, n }));
+  // 分组题若有一百个类别，逐个和基准组比较既没有信息量，也会把结论句写成一面墙。
+  const groups = allGroups.slice(0, MAX_COMPARE_GROUPS);
+  const omittedGroups = allGroups.length - groups.length;
   const base = {
     group: group.id,
     compare: compare.id,
@@ -295,8 +301,10 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     multi: compare.type === 'multi',
     n: picked.length,
     groups,
+    ...(omittedGroups > 0 ? { omittedGroups } : {}),
     test: null,
   };
+  const groupNote = omittedGroups > 0 ? `分组题有 ${allGroups.length} 类，只比较人数最多的 ${MAX_COMPARE_GROUPS} 组（另有 ${omittedGroups} 组未纳入）；` : '';
   const oneGroup = '分组题只有一组有有效回答，无法比较差别。';
   if (picked.length === 0) return { ...base, mode: 'mean', rows: [], sentence: '没有同时有效回答这两道题的记录。' };
 
@@ -325,8 +333,17 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     const amount: Amount = (x) => formatNumber(x, 2);
     const unit = numeric ? '' : ' 分';
     const parts = phrases(groups, diffs, unit, amount);
-    const head = `各组在「${compare.title}」上的均值${diffs.some((d) => d && excludesZero(d)) ? '存在差别' : '没有看到明确差别'}（相对基准组「${groups[0].name}」）：`;
-    const sentence = groups.length < 2 ? oneGroup : parts.length ? `${head}${parts.join('；')}。` : '各组的有效回答不足 2 条或取值完全相同，无法比较均值差别。';
+    const head = `${groupNote}各组在「${compare.title}」上的均值${diffs.some((d) => d && excludesZero(d)) ? '存在差别' : '没有看到明确差别'}（相对基准组「${groups[0].name}」）：`;
+    // 组多时结论只列差值最大的 3 组，其余看表格，避免一句话铺满屏幕。
+    const ranked = diffs
+      .map((d, i) => ({ d, part: parts[i] }))
+      .filter((x) => x.d !== null && !!x.part) as { d: Diff; part: string }[];
+    const limited = ranked
+      .sort((a, b) => Math.abs(b.d.diff) - Math.abs(a.d.diff))
+      .slice(0, 3)
+      .map((x) => x.part);
+    const rest = parts.length - limited.length;
+    const sentence = groups.length < 2 ? oneGroup : parts.length ? `${head}${limited.join('；')}${rest > 0 ? `；其余 ${rest} 组见表格` : ''}。` : '各组的有效回答不足 2 条或取值完全相同，无法比较均值差别。';
     return {
       ...base,
       mode: 'mean',
@@ -372,7 +389,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
   let sentence: string;
   if (groups.length < 2) sentence = oneGroup;
   else if (!comparable) sentence = '各组的有效回答不足，无法比较占比差别。';
-  else if (found.length === 0) sentence = `相对基准组「${groups[0].name}」，各选项的占比都没有看到明确差别（所有区间都包含 0）。`;
+  else if (found.length === 0) sentence = `${groupNote}相对基准组「${groups[0].name}」，各选项的占比都没有看到明确差别（所有区间都包含 0）。`;
   else {
     const biggest = found.reduce((a, b) => (Math.abs(b.diff) > Math.abs(a.diff) ? b : a));
     let where = '';
@@ -382,6 +399,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     }
     sentence = `相对基准组「${groups[0].name}」，差别最大的一处是${where}；${found.length} 处区间不含 0，${rest} 处没有看到明确差别。`;
   }
+  if (omittedGroups > 0 && !sentence.startsWith('分组题有')) sentence = groupNote + sentence;
   if (test) sentence += `整体分布检验：${formatTest(test)}。`;
   if (compare.type === 'multi') sentence += '各选项分别检验，未做多重比较校正。';
   return { ...base, mode: 'prop', rows: rowsOut, test, sentence };

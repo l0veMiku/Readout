@@ -2549,3 +2549,8 @@ button {
   color: var(--ink-2);
   font-size: 12px;
 }
+
+
+.box-group + .box-group {
+  margin-top: 14px;
+}

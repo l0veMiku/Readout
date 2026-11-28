@@ -357,3 +357,18 @@ test('Yates option changes a 2x2 comparison and is reported', () => {
   assert.match(formatTest(yates), /（Yates 校正）/);
   assert.doesNotMatch(formatTest(plain), /（Yates 校正）/);
 });
+
+
+test('more than eight grouping categories are capped with a note', () => {
+  const group: Question = { id: 'g', title: 'g', rawTitle: 'g', type: 'single', included: true };
+  const compare: Question = { id: 'x', title: 'x', rawTitle: 'x', type: 'numeric', included: true };
+  const rows: Record<string, string>[] = [];
+  for (let i = 0; i < 10; i++) {
+    for (let k = 0; k <= i; k++) rows.push({ g: `c${i}`, x: String((k % 5) + 1) });
+  }
+  const r = compareQuestions(group, compare, rows, { deferBootstrap: true })!;
+  assert.equal(r.groups.length, 8);
+  assert.equal(r.omittedGroups, 2);
+  assert.match(r.sentence, /只比较人数最多的 8 组/);
+  assert.ok(!r.sentence.includes('c0') && !r.sentence.includes('c1'), '被省略的小组不写进结论');
+});

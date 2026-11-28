@@ -4,7 +4,7 @@ import { PRO_MODE_OFF, TYPE_LABELS } from '../types.ts';
 import { canCompare, compareQuestions, formatTest } from '../lib/compare.ts';
 import type { Comparison, Diff, MeanCell, TestResult } from '../lib/compare.ts';
 import { CORRECTION_LABELS, withProMode } from '../lib/comparePro.ts';
-import { GROUP_COLORS, dotIntervals } from '../lib/charts.ts';
+import { GROUP_COLORS, dotIntervals, meanBars } from '../lib/charts.ts';
 import { sampleNote } from '../lib/stats.ts';
 import { ciDigits, formatCI, formatNumber, formatP, formatPct, formatPctCI, formatRange } from '../lib/text.ts';
 import { Chart } from './Chart.tsx';
@@ -66,6 +66,14 @@ export function ComparisonBody({ comparison, inReport, pro = PRO_MODE_OFF }: { c
   const medianRow = mode === 'mean' && rows[0].cells.some((c) => c.kind === 'mean' && c.median !== null);
 
   const chart = useMemo(() => {
+    // 均值比较且组数多时，把「组」放到行上，避免 8 个点叠在同一行。
+    if (mode === 'mean' && groups.length > 4 && rows[0]) {
+      const means = groups.flatMap((g, gi) => {
+        const c = rows[0].cells[gi];
+        return c.kind === 'mean' && c.mean !== null ? [{ name: g.name, value: c.mean, ci: c.meanCI }] : [];
+      });
+      if (means.length > 1) return meanBars(means);
+    }
     const labels = chartRows.map((r) => r.name);
     if (medianRow) labels.push('中位数');
     const series = shown.map((gi) => {
@@ -91,6 +99,7 @@ export function ComparisonBody({ comparison, inReport, pro = PRO_MODE_OFF }: { c
   const notes = groups.filter((g) => sampleNote(g.n)).map((g) => `「${g.name}」${sampleNote(g.n)}`);
   if (multi) notes.push(comparison.adjust ? '各选项分别检验，p 值已做多重比较校正。' : '各选项分别检验，未做多重比较校正。');
   if (comparison.medianPending) notes.push('各组中位数的 95% 区间还在后台计算，算完后补上。');
+  if (comparison.omittedGroups) notes.push(`分组题共有 ${groups.length + comparison.omittedGroups} 类，只比较人数最多的 ${groups.length} 组；其余 ${comparison.omittedGroups} 组未纳入。`);
   if (shown.length < groups.length) notes.push(`图中只画人数最多的 8 组，表格列出全部。`);
   if (chartRows.length < rows.length) notes.push(`图中只画人数最多的 ${chartRows.length} 个选项，表格列出全部。`);
   if (comparison.adjust) notes.push(`${CORRECTION_LABELS[comparison.adjust.method]} 校正：共 ${comparison.adjust.m} 处比较；表中区间未校正，加粗按校正后 p < 0.05。`);
@@ -225,7 +234,8 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison, pro =
         {notice && <p className="alert">{notice}</p>}
         {comparison && (
           <p className="work-meta">
-            共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
+            共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length + (comparison.omittedGroups ?? 0)} 组
+            {comparison.omittedGroups ? `，比较人数最多的 ${comparison.groups.length} 组` : ''}。
           </p>
         )}
         {comparison && pro.on && (comparison.adjust || comparison.rank || pro.effectSize) && (

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { capBars, dotIntervals } from './charts.ts';
+import { capBars, dotIntervals, meanBars } from './charts.ts';
 
 interface RenderedSeries {
   type: string;
@@ -72,4 +72,14 @@ test('capBars leaves small questions untouched', () => {
   const capped = capBars(rows, 12);
   assert.equal(capped.rows, rows);
   assert.equal(capped.omitted, 0);
+});
+
+
+test('meanBars puts every group on the category axis', () => {
+  const rows = Array.from({ length: 8 }, (_, i) => ({ name: `g${i}`, value: 2 + i / 10, ci: { lower: 1.8 + i / 10, upper: 2.2 + i / 10 } }));
+  const built = meanBars(rows);
+  const yAxis = built.option.yAxis as unknown as { type: string; data: string[] };
+  assert.equal(yAxis.type, 'category');
+  assert.deepEqual(yAxis.data, rows.map((r) => r.name));
+  assert.equal(built.height, 8 * 36 + 40);
 });

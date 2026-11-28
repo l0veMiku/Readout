@@ -42,17 +42,44 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
   const worstMissing = diagnostics.missing.filter((m) => m.rate > 0.1).length;
 
   // 只准备数据；画图交给懒加载的 BoxChartLazy。
-  const boxRows = useMemo(() => {
+  type AuditBox = { name: string; min: number; q1: number; median: number; q3: number; max: number; span: number; lo: number; hi: number; key: number };
+  const boxRows = useMemo<AuditBox[]>(() => {
     if (!pro.on) return [];
     return items.flatMap((item) =>
       (item.kind === 'question' ? [item.question] : item.questions)
         .filter((q) => q.type === 'scale' || q.type === 'numeric')
         .flatMap((q) => {
           const five = fiveNumbers(boxValues(q, rows));
-          return five ? [{ name: q.subTitle ?? q.title, ...five }] : [];
+          if (!five) return [];
+          const iqr = five.q3 - five.q1;
+          const span = five.max - five.min;
+          // 箱线图按 Tukey 的 1.5×IQR 收须，极端值不把整张图的坐标轴拉长。
+          return [
+            {
+              name: q.subTitle ?? q.title,
+              min: Math.max(five.min, five.q1 - 1.5 * iqr),
+              q1: five.q1,
+              median: five.median,
+              q3: five.q3,
+              max: Math.min(five.max, five.q3 + 1.5 * iqr),
+              span,
+              lo: five.min,
+              hi: five.max,
+              key: Math.floor(Math.log10(Math.max(span, 2))),
+            },
+          ];
         }),
     );
   }, [items, rows, pro.on]);
+
+  // 量表（1–5）和数值题（0–100000）不能共用一根坐标轴：按取值范围分组，每组单独一张箱线图。
+  const boxGroups = useMemo(() => {
+    const map = new Map<number, AuditBox[]>();
+    for (const row of boxRows) map.set(row.key, [...(map.get(row.key) ?? []), row]);
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([key, list]) => ({ key, rows: list, lo: Math.min(...list.map((r) => r.lo)), hi: Math.max(...list.map((r) => r.hi)) }));
+  }, [boxRows]);
 
   const heatData = useMemo(() => {
     if (!pro.on || !corr) return null;
@@ -158,11 +185,18 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
 
           <section className="card">
             <h2>分布</h2>
-            {boxRows.length > 0 && (
-              <Suspense fallback={<p className="chart-placeholder" style={{ height: boxRows.length * 36 + 56 }}>图表加载中…</p>}>
-                <BoxChartLazy rows={boxRows} />
-              </Suspense>
-            )}
+            {boxGroups.map((g) => (
+              <div className="box-group" key={g.key}>
+                {boxGroups.length > 1 && (
+                  <p className="chart-note">
+                    取值 {String(Number(g.lo.toFixed(2)))}–{String(Number(g.hi.toFixed(2)))} · {g.rows.length} 个变量
+                  </p>
+                )}
+                <Suspense fallback={<p className="chart-placeholder" style={{ height: g.rows.length * 36 + 56 }}>图表加载中…</p>}>
+                  <BoxChartLazy rows={g.rows} />
+                </Suspense>
+              </div>
+            ))}
             <div className="table-scroll">
               <table className="dist">
                 <thead>
