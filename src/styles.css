@@ -2554,3 +2554,22 @@ button {
 .box-group + .box-group {
   margin-top: 14px;
 }
+
+
+.schema-strip {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.schema-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: 11px;
+}

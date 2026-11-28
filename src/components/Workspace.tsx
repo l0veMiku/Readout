@@ -51,6 +51,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
   const included = dataset.questions.filter((q) => q.included);
+  const uncertain = included.filter((q) => q.schema && q.schema.confidence !== 'high' && !q.schema.confirmed);
   const items = includedItems(dataset);
   const ignored = dataset.questions.filter((q) => !q.included);
   const openQuestions = included.filter((q) => q.type === 'open');
@@ -128,7 +129,13 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
             {cleaning && cleaning.excluded > 0 ? `（已剔除 ${cleaning.excluded} 份）` : ''} · {dataset.fileName}
             {dataset.sheet ? ` · 工作表「${dataset.sheet}」` : ''}
             {dataset.skippedRows > 0 ? ` · 已跳过表头上方 ${dataset.skippedRows} 行` : ''}
+            {dataset.format ? ` · 格式：${dataset.format.label}` : ''}
           </p>
+          {uncertain.length > 0 && (
+            <p className="schema-strip">
+              {uncertain.length} 列按结构推断，可在卡片上修改题型；不修改也可以继续生成报告。
+            </p>
+          )}
           <div className="work-actions">
             <FileDrop
               compact

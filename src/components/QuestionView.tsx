@@ -676,6 +676,11 @@ export function QuestionCard({ index, question, stat, onChangeType, onIgnore, on
         {TYPE_LABELS[question.type]} · {locked ? `有效得分 ${stat.n} 份` : `有效回答 ${stat.n} 条`}
         {stat.missing > 0 ? ` · ${locked ? '没有得分' : '缺失'} ${stat.missing} 份` : ''}
         {showMissingRate && stat.missing > 0 && stat.n + stat.missing > 0 ? ` · 缺失率 ${formatPct(stat.missing / (stat.n + stat.missing))}` : ''}
+        {question.schema && question.schema.confidence !== 'high' && !question.schema.confirmed && (
+          <span className="schema-badge">
+            待确认{question.schema.suggested ? ` · 可能是${TYPE_LABELS[question.schema.suggested]}` : ''}
+          </span>
+        )}
       </p>
       {note && <p className="card-note">{note}</p>}
       {showDistribution && (stat.kind === 'scale' || stat.kind === 'numeric') && stat.shape && (

@@ -352,10 +352,18 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
           <dd>
             {dataset.fileName}
             {dataset.sheet ? `（工作表「${dataset.sheet}」）` : ''}，共 {dataset.rows.length} 行，{dataset.encoding} 编码
-            {dataset.skippedRows > 0 ? `，表头上方有 ${dataset.skippedRows} 行非表头内容已跳过` : ''}。
+            {dataset.skippedRows > 0 ? `，表头上方有 ${dataset.skippedRows} 行非表头内容已跳过` : ''}
+            {dataset.format ? `；导出格式按「${dataset.format.label}」解析` : ''}。
           </dd>
           <dt>题型识别</dt>
-          <dd>由 Readout 自动识别，并可在工作台手动调整；被忽略的题目不进入统计和报告。按选项序号导出的 1–10 整数编码判为单选题；表头形如「第N题(子项)」或「题干[子项]」的列自动组成题组。</dd>
+          <dd>
+            由 Readout 自动识别，并可在工作台手动调整；被忽略的题目不进入统计和报告。按选项序号导出的 1–10 整数编码判为单选题；表头形如「第N题(子项)」或「题干[子项]」的列自动组成题组。
+            {dataset.format?.notes.length ? ` 本次导入：${dataset.format.notes.join('；')}。` : ''}
+            {(() => {
+              const uncertain = dataset.questions.filter((q) => q.included && q.schema && q.schema.confidence !== 'high' && !q.schema.confirmed);
+              return uncertain.length > 0 ? ` 有 ${uncertain.length} 列按结构推断，报告中按当前题型统计。` : '';
+            })()}
+          </dd>
           <dt>有效回答</dt>
           <dd>非空，且不等于 N/A、-、—、未填写 等占位值的单元格；缺失值不计入分母。</dd>
           <dt>单选</dt>

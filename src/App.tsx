@@ -20,6 +20,7 @@ import { answersOf } from './lib/stats.ts';
 import { reliability } from './lib/reliability.ts';
 import type { Reliability } from './lib/reliability.ts';
 import { analysisRows, cleaningSummary } from './lib/cleaning.ts';
+import { withUserSchema } from './lib/schemaInference.ts';
 import type { CleaningSummary } from './lib/cleaning.ts';
 import { scoreStates, setScore, withScores } from './lib/scores.ts';
 import type { ScoreState } from './lib/scores.ts';
@@ -307,9 +308,7 @@ export default function App() {
       d
         ? {
             ...d,
-            questions: d.questions.map((q) =>
-              q.id === id ? { ...q, type, included: type === 'meta' ? false : q.type === 'meta' ? true : q.included } : q,
-            ),
+            questions: d.questions.map((q) => (q.id === id ? withUserSchema(q, type) : q)),
           }
         : d,
     );

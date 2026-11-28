@@ -1,0 +1,4 @@
+ResponseID,ResponseSet,StartDate,EndDate,Finished,Status,Q1,Q5_1,Q5_2,Q5_3,Q5_4,Q6_TEXT
+R_1,Default Response Set,2025-01-02 10:00:00,2025-01-02 10:03:00,1,0,2,4,3,5,2,挺好的
+R_2,Default Response Set,2025-01-02 10:04:00,2025-01-02 10:07:00,1,0,NA,3,NA,4,NA,NA
+R_3,Default Response Set,2025-01-02 10:08:00,2025-01-02 10:11:00,0,1,4,5,4,5,5,

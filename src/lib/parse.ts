@@ -1,6 +1,8 @@
 import Papa from 'papaparse';
 import type { Dataset } from '../types.ts';
 import { inferQuestions, splitStem } from './infer.ts';
+import { detectProfile, formatOf, normalizeMissing } from './exportProfiles.ts';
+import { annotateSchema, normalizeStructure } from './schemaInference.ts';
 
 export class ParseError extends Error {}
 
@@ -179,6 +181,7 @@ export function buildDataset(grid: string[][], fileName: string, encoding: strin
   if (best === 1) throw new ParseError('没有识别到表头：第一行应当是题目名称，每个题目占一列。');
 
   const rawHeaders = body[headerIdx];
+  const duplicateHeaders = rawHeaders.filter((h, i) => h !== '' && rawHeaders.indexOf(h) !== i).length;
   const dataRows = body.slice(headerIdx + 1);
   const keep = rawHeaders
     .map((_, i) => i)
@@ -192,10 +195,39 @@ export function buildDataset(grid: string[][], fileName: string, encoding: strin
     seen.set(base, n);
     return n === 1 ? base : `${base} (${n})`;
   });
-  const rows = dataRows.map((r) => Object.fromEntries(keep.map((i, k) => [headers[k], r[i] ?? ''])));
+  const rawRows = dataRows.map((r) => Object.fromEntries(keep.map((i, k) => [headers[k], r[i] ?? ''])));
 
-  const merged = mergeOptionColumns(headers, rows);
+  const profile = detectProfile(headers);
+  const missing = normalizeMissing(rawRows, profile.missingTokens);
+  const structure = normalizeStructure(headers, missing.rows);
+  // Google Forms 分支题常生成重复表头且整列为空；这类列不生成题目。
+  const emptyDuplicates = new Set(
+    structure.headers.filter((h) => / \(\d+\)$/.test(h) && structure.rows.every((r) => (r[h] ?? '').trim() === '')),
+  );
+  const cleanedHeaders = emptyDuplicates.size > 0 ? structure.headers.filter((h) => !emptyDuplicates.has(h)) : structure.headers;
+  const cleanedRows =
+    emptyDuplicates.size > 0
+      ? structure.rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !emptyDuplicates.has(k))))
+      : structure.rows;
+  const merged = mergeOptionColumns(cleanedHeaders, cleanedRows);
   const inferred = inferQuestions(merged.headers, merged.rows);
+  // 平台系统列即使不在通用 META 列表里，也按元数据忽略。
+  if (profile.systemColumns.length > 0) {
+    for (const q of inferred.questions) {
+      if (profile.systemColumns.some((re) => re.test(q.rawTitle.trim()))) {
+        q.type = 'meta';
+        q.included = false;
+      }
+    }
+  }
+  const formatNotes = [...structure.notes];
+  if (missing.touched > 0) formatNotes.push(`${profile.label} 缺失码按缺失处理（${missing.touched} 行）`);
+  if (profile.id === 'qualtrics') {
+    const finished = rawRows.filter((r) => (r['Finished'] ?? '').trim() === '0').length;
+    if (finished > 0) formatNotes.push(`含 ${finished} 份 Finished=0（未完成）的答卷，当前保留`);
+  }
+  if (duplicateHeaders > 0) formatNotes.push(`有 ${duplicateHeaders} 个重复表头（分支题），已按列保留`);
+  if (emptyDuplicates.size > 0) formatNotes.push(`忽略 ${emptyDuplicates.size} 个全空的分支列`);
   return {
     fileName,
     importedAt: new Date().toISOString(),
@@ -204,8 +236,9 @@ export function buildDataset(grid: string[][], fileName: string, encoding: strin
     skippedRows: headerIdx,
     headers: merged.headers,
     rows: merged.rows,
-    questions: inferred.questions,
+    questions: annotateSchema(inferred.questions, merged.rows, profile),
     groups: inferred.groups,
+    format: formatOf(profile, formatNotes),
   };
 }
 

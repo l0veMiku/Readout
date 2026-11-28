@@ -1,4 +1,5 @@
 import type { Dataset } from '../types.ts';
+import { TYPE_LABELS } from '../types.ts';
 import type { CardItem } from './groups.ts';
 import type { Interval } from './intervals.ts';
 import type { Reliability } from './reliability.ts';
@@ -138,6 +139,15 @@ export function buildDiagnostics(input: {
   });
 
   const issues: DiagnosticIssue[] = [];
+  for (const q of questions) {
+    if (q.derived || !q.schema || q.schema.confidence === 'high' || q.schema.confirmed) continue;
+    issues.push({
+      level: 'info',
+      title: `「${q.subTitle ?? q.title}」题型待确认`,
+      detail: `${q.schema.evidence.join('；')}${q.schema.suggested ? `；建议改为${TYPE_LABELS[q.schema.suggested]}` : ''}。当前按${TYPE_LABELS[q.type]}统计。`,
+      cardIndex: cardIndexOf.get(q.id) ?? 0,
+    });
+  }
   // 0 既可能是合法取值，也可能是「未作答」的编码；只提示，不替用户改数据。
   for (const q of questions) {
     if (q.derived || (q.type !== 'single' && q.type !== 'scale' && q.type !== 'numeric')) continue;

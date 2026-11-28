@@ -11,6 +11,26 @@ export const TYPE_LABELS: Record<QuestionType, string> = {
   meta: '元数据',
 };
 
+export type SchemaSource = 'platform' | 'header' | 'structure' | 'value' | 'user';
+export type SchemaConfidence = 'high' | 'medium' | 'low';
+
+export interface ColumnSchema {
+  source: SchemaSource;
+  confidence: SchemaConfidence;
+  evidence: string[];
+  // 用户改过题型时置为 true，之后自动推断不再覆盖。
+  confirmed?: boolean;
+  // 低置信时建议的题型。
+  suggested?: QuestionType;
+}
+
+export interface DatasetFormat {
+  id: string;
+  label: string;
+  missingTokens: string[];
+  notes: string[];
+}
+
 export interface Question {
   id: string;
   title: string;
@@ -19,6 +39,7 @@ export interface Question {
   included: boolean;
   groupId?: string;
   subTitle?: string;
+  schema?: ColumnSchema;
   // 反向计分题：只影响题组的信度计算，各题自己的统计照旧按原始作答。
   reversed?: boolean;
   // 派生题目：由题组的子项算出来，不对应文件里的列。
@@ -67,6 +88,7 @@ export interface Dataset {
   rows: Record<string, string>[];
   questions: Question[];
   groups: QuestionGroup[];
+  format?: DatasetFormat;
   // 没有清洗设置时不存在，所有问卷都计入分析。
   cleaning?: Cleaning;
   // 哪些题组生成了维度得分，以及各自的缺失规则；没有生成时不存在。
