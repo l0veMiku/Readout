@@ -62,52 +62,52 @@ export interface HeatResult {
   option: ChartOption;
   height: number;
   width: number;
+  cell: number;
 }
 
 // 相关热图：照 R 的 corrplot 做法——RdBu（红–白–蓝，0 为白）、正方形格子、格子描白边、
-// 对角线留空（1.00 不画，避免整条对角线压过其他格子），变量不超过 6 个时写数值。
-// 宽度按格子数算，容器横向滚动，不把格子拉成长方形。
-export function correlationHeatmap(labels: string[], matrix: (number | null)[][]): HeatResult {
+// 对角线留空（1.00 不画），轴用编号 + 图例，避免长题干互相压字。
+// 格子大小由调用方按容器宽度算好传进来（正方形不能被拉伸），宽度 = 格子×变量数 + 色标与边距。
+export function correlationHeatmap(labels: string[], matrix: (number | null)[][], cell = 40): HeatResult {
   const n = labels.length;
-  const cell = 34;
-  const yLabelW = 138;
-  const right = 78; // 竖向色标
-  const bottom = n > 8 ? 64 : 26;
-  const width = yLabelW + n * cell + right + 8;
-  const height = n * cell + 8 + bottom;
-  const data: [number, number, number][] = [];
+  const size = Math.max(24, Math.round(cell));
+  const right = 64; // 竖向色标与刻字
+  const width = n * size + right + 8;
+  const height = n * size + 30;
+  const data: { value: [number, number, number]; label?: { color: string } }[] = [];
   matrix.forEach((row, i) => row.forEach((v, j) => {
     if (i === j || v === null) return;
-    data.push([j, i, v]);
+    data.push({ value: [j, i, v], label: { color: Math.abs(v) > 0.55 ? '#ffffff' : '#1d2621' } });
   }));
+  const index = { formatter: (_value: string, i: number) => String(i + 1) };
   return {
     width,
     height,
+    cell: size,
     option: {
-      grid: { left: 4, right, top: 8, bottom, containLabel: true },
+      grid: { left: 8, right, top: 8, bottom: 22, containLabel: true },
       tooltip: {
         trigger: 'item',
         formatter: (p) => {
-          const d = p as unknown as { data: [number, number, number] };
-          return `${escapeHtml(labels[d.data[1]])} × ${escapeHtml(labels[d.data[0]])}<br/>r = ${d.data[2].toFixed(2)}`;
+          const item = p as unknown as { data: { value: [number, number, number] } };
+          const [j, i, v] = item.data.value;
+          return `${i + 1}. ${escapeHtml(labels[i])} × ${j + 1}. ${escapeHtml(labels[j])}<br/>r = ${v.toFixed(2)}`;
         },
       },
       xAxis: {
         type: 'category',
-        data: labels,
-        axisLabel: { color: AXIS, fontSize: 11, interval: 0, rotate: n > 8 ? 40 : 0, margin: 6 },
+        data: labels.map((_, i) => String(i + 1)),
+        axisLabel: { color: AXIS, fontSize: 11, interval: 0, margin: 6, ...index },
         axisLine: { show: false },
         axisTick: { show: false },
-        splitArea: { show: false },
       },
       yAxis: {
         type: 'category',
-        data: labels,
+        data: labels.map((_, i) => String(i + 1)),
         inverse: true,
-        axisLabel: { color: AXIS, fontSize: 11, width: 128, overflow: 'truncate', margin: 6 },
+        axisLabel: { color: AXIS, fontSize: 11, interval: 0, margin: 6 },
         axisLine: { show: false },
         axisTick: { show: false },
-        splitArea: { show: false },
       },
       visualMap: {
         min: -1,
@@ -129,13 +129,12 @@ export function correlationHeatmap(labels: string[], matrix: (number | null)[][]
           data,
           itemStyle: { borderColor: '#ffffff', borderWidth: 1 },
           label: {
-            show: n <= 6,
+            show: size >= 38,
             fontSize: 11,
-            color: '#1d2621',
             formatter: (p) => {
-              // ECharts 的 formatter 参数没有精确类型；这里的 data 形状由上面的 series.data 决定。
-              const item = p as unknown as { data: [number, number, number] };
-              return item.data[2].toFixed(2);
+              // ECharts 的 formatter 参数没有精确类型；data 形状由上面的 series.data 决定。
+              const item = p as unknown as { data: { value: [number, number, number] } };
+              return item.data.value[2].toFixed(2);
             },
           },
           emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.25)' } },
