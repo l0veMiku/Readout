@@ -14,7 +14,7 @@ import { CleaningPanel } from './components/CleaningPanel.tsx';
 import { AISettings, currentConfig } from './components/AISettings.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { parseFile } from './lib/parse.ts';
-import { buildFindings, computeStat, numericSamples, withBootstrap } from './lib/stats.ts';
+import { buildFindings, computeStat, numericSamples, validRowCount, withBootstrap } from './lib/stats.ts';
 import type { Stat } from './lib/stats.ts';
 import { answersOf } from './lib/stats.ts';
 import { reliability } from './lib/reliability.ts';
@@ -24,7 +24,7 @@ import type { CleaningSummary } from './lib/cleaning.ts';
 import { scoreStates, setScore, withScores } from './lib/scores.ts';
 import type { ScoreState } from './lib/scores.ts';
 import { bootstrapPool } from './lib/bootstrapPool.ts';
-import { mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
+import { includedItems, mergeQuestions, splitGroup, toggleIncluded, toggleReversed } from './lib/groups.ts';
 import { summarizeOpenQuestion } from './lib/ai.ts';
 import { loadKey } from './lib/storage.ts';
 import { buildReportHtml } from './lib/exportHtml.ts';
@@ -37,14 +37,17 @@ import { setScoreForm } from './lib/scores.ts';
 import { reliabilityExtras } from './lib/reliabilityExtras.ts';
 import type { ReliabilityExtras } from './lib/reliabilityExtras.ts';
 import { ProModePanel } from './components/ProModePanel.tsx';
+import { DiagnosticsPage } from './components/DiagnosticsPage.tsx';
+import { buildDiagnostics } from './lib/diagnostics.ts';
 
-type View = 'home' | 'workspace' | 'compare' | 'correlation' | 'report';
+type View = 'home' | 'workspace' | 'compare' | 'correlation' | 'diagnostics' | 'report';
 
 function readHash(): View {
   if (location.hash === '#/workspace') return 'workspace';
   if (location.hash === '#/report') return 'report';
   if (location.hash === '#/compare') return 'compare';
   if (location.hash === '#/correlation') return 'correlation';
+  if (location.hash === '#/diagnostics') return 'diagnostics';
   return 'home';
 }
 
@@ -94,6 +97,18 @@ export default function App() {
     const hash = next === 'home' ? '' : `#/${next}`;
     if (location.hash === hash || (next === 'home' && location.hash === '#')) setView(next);
     else location.hash = hash;
+  };
+
+  // 诊断页的「查看」：回到工作台对应卡片并高亮短暂一下。
+  const jumpToCard = (index: number) => {
+    go('workspace');
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`card-${index}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('card-flash');
+      window.setTimeout(() => el.classList.remove('card-flash'), 1600);
+    });
   };
 
   const adopt = (ds: Dataset, name: string) => {
@@ -321,6 +336,13 @@ export default function App() {
   const showWorkspace = view === 'workspace' && !!dataset;
   const showCompare = view === 'compare' && !!dataset;
   const showCorrelation = view === 'correlation' && !!dataset;
+  const showDiagnostics = view === 'diagnostics' && !!dataset;
+  // 卡片顺序与工作台一致，诊断里的「查看」用它跳回对应卡片。
+  const cardItems = useMemo(() => (analysis ? includedItems(analysis) : []), [analysis]);
+  const diagnostics = useMemo(
+    () => (analysis ? buildDiagnostics({ dataset: analysis, items: cardItems, stats, reliabilities, extras }) : null),
+    [analysis, cardItems, stats, reliabilities, extras],
+  );
   // 顶栏按钮上的启用项数，以及报告顶部的一行摘要（让“打开后报告变了什么”一眼可见）。
   const proCount = [
     pro.correction !== null,
@@ -349,7 +371,7 @@ export default function App() {
 
   return (
     <>
-      {showWorkspace || showCompare || showCorrelation || showReport ? (
+      {showWorkspace || showCompare || showCorrelation || showDiagnostics || showReport ? (
         <header className="topbar">
           {showReport ? (
             <button className="btn" onClick={() => go('workspace')}>
@@ -368,6 +390,11 @@ export default function App() {
                 <button className={showCorrelation ? 'active' : ''} onClick={() => go('correlation')}>
                   相关分析
                 </button>
+                {pro.on && (
+                  <button className={showDiagnostics ? 'active' : ''} onClick={() => go('diagnostics')}>
+                    数据诊断
+                  </button>
+                )}
               </nav>
             </>
           )}
@@ -417,6 +444,8 @@ export default function App() {
             onScore={score}
             onScoreForm={scoreForm}
             scoreFormsEnabled={pro.on && pro.scoreForms}
+            proDistribution={pro.on && pro.distribution}
+            proMissingRate={pro.on && pro.missingTable}
             cleaning={cleaning}
             onOpenCleaning={() => setCleaningOpen(true)}
           />
@@ -433,7 +462,20 @@ export default function App() {
             comparison={comparison}
           />
         ) : showCorrelation && analysis ? (
-          <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} />
+          <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} pro={pro} />
+        ) : showDiagnostics && analysis && diagnostics ? (
+          <DiagnosticsPage
+            dataset={analysis}
+            items={cardItems}
+            rows={scoredRows}
+            diagnostics={diagnostics}
+            corr={corr}
+            pro={pro}
+            valid={validRowCount(analysis, baseRows)}
+            onJump={jumpToCard}
+            onOpenPro={() => setProOpen(true)}
+            onGoCorrelation={() => go('correlation')}
+          />
         ) : showReport && analysis ? (
           <div className="report-wrap">
             {pro.on && (
@@ -469,7 +511,7 @@ export default function App() {
               </div>
             </div>
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印或导出。</p>}
-            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} pro={pro} extras={extras} />
+            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} pro={pro} extras={extras} diagnostics={diagnostics} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

@@ -6,6 +6,7 @@ import { validRowCount } from '../lib/stats.ts';
 import { includedItems } from '../lib/groups.ts';
 import { formatDateTime, formatPct } from '../lib/text.ts';
 import type { ReliabilityExtras } from '../lib/reliabilityExtras.ts';
+import type { Diagnostics } from '../lib/diagnostics.ts';
 import { CORRECTION_LABELS } from '../lib/comparePro.ts';
 import { GroupBody, QuestionBody, ThemeList, aiNote, sentence } from './QuestionView.tsx';
 import { ComparisonBody } from './Compare.tsx';
@@ -99,9 +100,10 @@ interface ReportProps {
   cleaning: CleaningSummary | null;
   pro: ProModeOptions;
   extras: Record<string, ReliabilityExtras | null>;
+  diagnostics: Diagnostics | null;
 }
 
-export function Report({ correlation, comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning, pro, extras }: ReportProps) {
+export function Report({ correlation, comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning, pro, extras, diagnostics }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
   // 专业模式下的口径说明；没启用任何项时为空。
   const proLines = [
@@ -204,6 +206,52 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
           本报告共纳入 {included.length} 道题（{kinds.join('、')}）。
         </p>
       </section>
+
+      {pro.on && diagnostics && (
+        <section className="r-sec">
+          <h2>专业指标总览</h2>
+          <div className="table-scroll">
+            <table className="dist">
+              <thead>
+                <tr>
+                  <th>变量 / 题组</th>
+                  <th>n</th>
+                  <th>偏度</th>
+                  <th>峰度</th>
+                  <th>α</th>
+                  <th>KMO</th>
+                  <th>ω</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diagnostics.shapes.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.name}</td>
+                    <td>{s.n}</td>
+                    <td>{s.skew.toFixed(2)}</td>
+                    <td>{s.kurtosis.toFixed(2)}</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                  </tr>
+                ))}
+                {diagnostics.groups.map((g) => (
+                  <tr key={g.id}>
+                    <td>{g.title}</td>
+                    <td>{g.complete ?? '—'}</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>{g.alpha === null ? '—' : g.alpha.toFixed(3)}</td>
+                    <td>{g.kmo === null ? '—' : g.kmo.toFixed(3)}</td>
+                    <td>{g.omega === null ? '—' : g.omega.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="hint">一页汇总；逐题的原始出处仍是下面的题组/得分章节与「数据质量」。</p>
+        </section>
+      )}
 
       {pro.on && (pro.missingTable || pro.distribution) && (
         <section className="r-sec" id="r-quality">

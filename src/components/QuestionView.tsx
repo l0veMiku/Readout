@@ -1,4 +1,5 @@
 import type { ReliabilityExtras } from '../lib/reliabilityExtras.ts';
+import { kmoBand } from '../lib/diagnostics.ts';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
@@ -256,16 +257,7 @@ export function GroupBody({ questions, stats, reliability: rel, onToggleReversed
 // 题组的信度一行：α、参与份数、翻转范围；算不出来时写原因。专业模式下追加 α 区间、KMO、Bartlett 与 ω。
 function ReliabilityLine({ rel, anyReversed, extras }: { rel: Reliability; anyReversed: boolean; extras?: ReliabilityExtras | null }) {
   const range = rel.range;
-  const pro = extras
-    ? [
-        extras.alphaCI ? `α 的 95% 区间 ${formatCI(extras.alphaCI, 3)}` : '',
-        extras.kmo !== null ? `KMO = ${extras.kmo.toFixed(3)}` : '',
-        extras.bartlett
-          ? `Bartlett χ² = ${formatNumber(extras.bartlett.chi2, 2)}，df = ${extras.bartlett.df}，${extras.bartlett.p < 0.001 ? 'p < 0.001' : `p = ${extras.bartlett.p.toFixed(3)}`}`
-          : '',
-        extras.omega !== null ? `单因子 ω = ${extras.omega.toFixed(3)}（近似）` : '',
-      ].filter(Boolean)
-    : [];
+  const hasPro = !!extras && (!!extras.alphaCI || extras.kmo !== null || !!extras.bartlett || extras.omega !== null);
   return (
     <>
       <p className="reliability-line">
@@ -280,7 +272,39 @@ function ReliabilityLine({ rel, anyReversed, extras }: { rel: Reliability; anyRe
         {rel.partial > 0 && `，另有 ${rel.partial} 份未答全`}
         {anyReversed && range && ` · 翻转范围 ${plain(range.min)}–${plain(range.max)}（翻转后 = ${plain(range.min + range.max)} − 原始分）`}
       </p>
-      {pro.length > 0 && <p className="reliability-line">专业口径：{pro.join(' · ')}</p>}
+      {hasPro && (
+        <div className="pro-metrics">
+          {extras?.alphaCI && (
+            <div>
+              <span>α 95% 区间</span>
+              <b>{formatCI(extras.alphaCI, 3)}</b>
+            </div>
+          )}
+          {extras?.kmo !== null && extras?.kmo !== undefined && (
+            <div>
+              <span>KMO</span>
+              <b>{extras.kmo.toFixed(3)}</b>
+              <em>{kmoBand(extras.kmo)}</em>
+            </div>
+          )}
+          {extras?.bartlett && (
+            <div>
+              <span>Bartlett</span>
+              <b>χ² {formatNumber(extras.bartlett.chi2, 2)}</b>
+              <em>
+                df {extras.bartlett.df}，{extras.bartlett.p < 0.001 ? 'p < 0.001' : `p ${extras.bartlett.p.toFixed(3)}`}
+              </em>
+            </div>
+          )}
+          {extras?.omega !== null && extras?.omega !== undefined && (
+            <div>
+              <span>单因子 ω</span>
+              <b>{extras.omega.toFixed(3)}</b>
+              <em>近似</em>
+            </div>
+          )}
+        </div>
+      )}
       {extras?.notes.map((n) => (
         <p key={n} className="sample-note">
           {n}
@@ -550,10 +574,13 @@ interface CardProps {
   locked?: boolean;
   onRemove?: () => void;
   note?: string;
+  // 专业模式：在卡片上直接显示分布与缺失率。
+  showDistribution?: boolean;
+  showMissingRate?: boolean;
   children?: ReactNode;
 }
 
-export function QuestionCard({ index, question, stat, onChangeType, onIgnore, onMerge, locked, onRemove, note, children }: CardProps) {
+export function QuestionCard({ index, question, stat, onChangeType, onIgnore, onMerge, locked, onRemove, note, showDistribution, showMissingRate, children }: CardProps) {
   return (
     <article className="card" id={`card-${index}`}>
       <header className="card-head">
@@ -596,8 +623,15 @@ export function QuestionCard({ index, question, stat, onChangeType, onIgnore, on
       <p className="card-meta">
         {TYPE_LABELS[question.type]} · {locked ? `有效得分 ${stat.n} 份` : `有效回答 ${stat.n} 条`}
         {stat.missing > 0 ? ` · ${locked ? '没有得分' : '缺失'} ${stat.missing} 份` : ''}
+        {showMissingRate && stat.missing > 0 && stat.n + stat.missing > 0 ? ` · 缺失率 ${formatPct(stat.missing / (stat.n + stat.missing))}` : ''}
       </p>
       {note && <p className="card-note">{note}</p>}
+      {showDistribution && (stat.kind === 'scale' || stat.kind === 'numeric') && stat.shape && (
+        <p className="card-meta dist-line">
+          分布：偏度 {stat.shape.skew.toFixed(2)}（SE {stat.shape.skewSE.toFixed(2)}） · 峰度 {stat.shape.kurtosis.toFixed(2)}（SE {stat.shape.kurtosisSE.toFixed(2)}）
+          {Math.abs(stat.shape.skew) > 1 || Math.abs(stat.shape.kurtosis) > 2 ? ' · 偏离正态，考虑秩检验' : ''}
+        </p>
+      )}
       <QuestionBody
         stat={stat}
         emptyHint={locked ? '按当前的算分条件，没有任何问卷得到得分：可以放宽条件，或先看子题有没有作答。' : undefined}

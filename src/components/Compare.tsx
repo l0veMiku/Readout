@@ -231,6 +231,14 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison, pro =
             共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
           </p>
         )}
+        {comparison && pro.on && (comparison.adjust || comparison.rank || pro.effectSize) && (
+          <p className="pro-strip">
+            {comparison.adjust && <span>{comparison.adjust.method === 'holm' ? 'Holm' : 'BH'} 校正 · {comparison.adjust.m} 处</span>}
+            {comparison.rank && <span>Mann–Whitney U / Kruskal–Wallis</span>}
+            {pro.effectSize && <span>Cramér's V</span>}
+            {comparison.adjust && <span>区间未校正</span>}
+          </p>
+        )}
       </header>
       {comparison ? (
         <ComparisonBody comparison={comparison} pro={pro} />

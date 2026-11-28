@@ -1,5 +1,5 @@
 import { startTransition, useMemo, useState } from 'react';
-import type { Dataset, Question } from '../types.ts';
+import type { Dataset, ProModeOptions, Question } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import { isCorrQuestion } from '../lib/correlation.ts';
 import type { Correlation, CorrPair } from '../lib/correlation.ts';
@@ -193,6 +193,7 @@ export function CorrelationPage({
   onToggle: (id: string) => void;
   onClear: () => void;
   corr: Correlation | null;
+  pro?: ProModeOptions;
 }) {
   const [navOpen, setNavOpen] = useState(false);
   const options = dataset.questions.filter((q) => isCorrQuestion(q));
@@ -253,6 +254,13 @@ export function CorrelationPage({
           {corr && (
             <p className="work-meta">
               {corr.variables.length} 个变量 · {corr.pairs.length} 对 · {clear} 对区间不含 0
+            </p>
+          )}
+          {corr && (corr.method === 'spearman' || corr.adjust) && (
+            <p className="pro-strip">
+              {corr.method === 'spearman' && <span>Spearman 秩相关（ties 近似）</span>}
+              {corr.adjust && <span>{corr.adjust.method === 'holm' ? 'Holm' : 'BH'} 校正 · {corr.adjust.m} 对</span>}
+              <span>区间未校正</span>
             </p>
           )}
         </header>

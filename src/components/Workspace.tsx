@@ -42,9 +42,11 @@ interface WorkspaceProps {
   extras: Record<string, ReliabilityExtras | null>;
   onScoreForm: (groupId: string, form: ScoreForm) => void;
   scoreFormsEnabled: boolean;
+  proDistribution: boolean;
+  proMissingRate: boolean;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, extras, onToggleReversed, rows, cleaning, onOpenCleaning, scoreStates, onScore, onScoreForm, scoreFormsEnabled }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, extras, onToggleReversed, rows, cleaning, onOpenCleaning, scoreStates, onScore, onScoreForm, scoreFormsEnabled, proDistribution, proMissingRate }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
@@ -205,6 +207,8 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 locked={!!item.question.derived}
                 onRemove={item.question.derived ? () => onScore(item.question.derived!.groupId, null) : undefined}
                 note={item.question.derived ? scoreNote(item.question, dataset) : undefined}
+                showDistribution={proDistribution}
+                showMissingRate={proMissingRate}
                 onChangeType={(type) => onChangeType(item.question.id, type)}
                 onIgnore={() => onToggle(item.question.id)}
                 onMerge={item.question.derived ? undefined : () => setMergeFrom(item.question)}
