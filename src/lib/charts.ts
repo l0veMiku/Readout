@@ -1,24 +1,15 @@
 import * as echarts from 'echarts/core';
-import { BarChart, BoxplotChart, HeatmapChart, LineChart, ScatterChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, VisualMapComponent } from 'echarts/components';
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import type { BarSeriesOption, BoxplotSeriesOption, HeatmapSeriesOption, LineSeriesOption, ScatterSeriesOption } from 'echarts/charts';
-import type { GridComponentOption, LegendComponentOption, MarkLineComponentOption, TooltipComponentOption, VisualMapComponentOption } from 'echarts/components';
+import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from 'echarts/charts';
+import type { GridComponentOption, LegendComponentOption, MarkLineComponentOption, TooltipComponentOption } from 'echarts/components';
 import { escapeHtml, formatRange } from './text.ts';
 
-echarts.use([BarChart, BoxplotChart, HeatmapChart, LineChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, MarkLineComponent, VisualMapComponent, SVGRenderer]);
+echarts.use([BarChart, LineChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, MarkLineComponent, SVGRenderer]);
 
 export type ChartOption = echarts.ComposeOption<
-  | BarSeriesOption
-  | BoxplotSeriesOption
-  | HeatmapSeriesOption
-  | LineSeriesOption
-  | ScatterSeriesOption
-  | GridComponentOption
-  | LegendComponentOption
-  | TooltipComponentOption
-  | MarkLineComponentOption
-  | VisualMapComponentOption
+  BarSeriesOption | LineSeriesOption | ScatterSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption | MarkLineComponentOption
 >;
 
 export const GROUP_COLORS = ['#1f5e46', '#a4442a', '#3d6fb0', '#8a6d1f', '#7a5ba6', '#2a7f8f', '#8c5a3c', '#5b6270'];
@@ -87,9 +78,9 @@ export function horizontalBars(rows: BarRow[]): { option: ChartOption; height: n
   const data = [...rows].reverse();
   const top = Math.max(0, ...rows.map((r) => (r.ci && r.pct > 0 ? (r.count / r.pct) * r.ci.upper : r.count)));
   return {
-    height: rows.length * 30 + 46,
+    height: rows.length * 30 + 40,
     option: {
-      grid: { left: 8, right: 64, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 4, right: 56, top: 6, bottom: 6, containLabel: true },
       tooltip: tooltip(rows.reduce((s, r) => s + r.count, 0)),
       xAxis: { type: 'value', show: false, max: top * 1.12 },
       // 数据倒序后第一项落在最上方，即人数最多的选项在最上面。
@@ -204,12 +195,12 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
   const offset = (g: number) => ((series.length - 1) / 2 - g) * step;
   const fmt = (v: number) => (pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(2));
   const tops = series.flatMap((s) => s.points.map((p) => p.upper ?? p.value));
-  // 组多时每行留高一点，点与区间才不会叠在一起。
-  const rowH = series.length >= 5 ? 60 : series.length >= 3 ? 52 : 46;
+  // 组多时每行留高一点，点与区间才不会叠在一起；边距只按实际出现的元素预留。
+  const rowH = series.length >= 5 ? 56 : series.length >= 3 ? 50 : 44;
   return {
-    height: rowLabels.length * rowH + (series.length > 1 ? 44 : 16),
+    height: rowLabels.length * rowH + (series.length > 1 ? 32 : 10),
     option: {
-      grid: { left: 8, right: 96, top: series.length > 1 ? 36 : 12, bottom: 12, containLabel: true },
+      grid: { left: 4, right: 16, top: series.length > 1 ? 26 : 8, bottom: 6, containLabel: true },
       legend: {
         show: series.length > 1,
         top: 0,
@@ -236,14 +227,15 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
         min: pct ? 0 : (v: { min: number }) => Math.min(v.min, 0),
         max: pct ? 1 : (v: { max: number }) => niceCeil(Math.max(...tops, v.max) * 1.06),
         splitLine: { lineStyle: { color: GRID } },
-        axisLabel: { color: AXIS, formatter: (v: number) => (pct ? `${Math.round(v * 100)}%` : String(Math.round(v * 100) / 100)) },
+        splitNumber: 5,
+        axisLabel: { color: AXIS, margin: 8, formatter: (v: number) => (pct ? `${Math.round(v * 100)}%` : String(Math.round(v * 100) / 100)) },
       },
       yAxis: {
         type: 'value',
         min: -0.5,
         max: rowLabels.length - 0.5,
         inverse: true,
-        axisLabel: { color: '#1d2621', fontSize: 13, margin: 12, formatter: (v: number) => (Number.isInteger(v) ? (rowLabels[v] ?? '') : '') },
+        axisLabel: { color: '#1d2621', fontSize: 13, margin: 8, formatter: (v: number) => (Number.isInteger(v) ? (rowLabels[v] ?? '') : '') },
         axisTick: { show: false },
         splitLine: { show: false },
       },
@@ -274,113 +266,6 @@ export function dotIntervals(series: DotSeries[], rowLabels: string[], pct: bool
           },
         ];
       }),
-    },
-  };
-}
-
-
-export interface BoxRow {
-  name: string;
-  min: number;
-  q1: number;
-  median: number;
-  q3: number;
-  max: number;
-}
-
-// 箱线图：体检页看分布用；每行一个变量。
-export function boxplots(rows: BoxRow[]): { option: ChartOption; height: number } {
-  const labels = rows.map((r) => r.name);
-  return {
-    height: Math.max(220, rows.length * 38 + 52),
-    option: {
-      grid: { left: 8, right: 28, top: 16, bottom: 20, containLabel: true },
-      tooltip: {
-        trigger: 'item',
-        formatter: (p) => {
-          const d = p as unknown as { name: string; data: number[] };
-          const [min, q1, median, q3, max] = d.data;
-          return `${escapeHtml(d.name)}<br/>中位数 ${median.toFixed(2)}<br/>Q1–Q3 ${q1.toFixed(2)}–${q3.toFixed(2)}<br/>范围 ${min.toFixed(2)}–${max.toFixed(2)}`;
-        },
-      },
-      xAxis: { type: 'value', splitLine: { lineStyle: { color: GRID } }, axisLabel: { color: AXIS } },
-      yAxis: {
-        type: 'category',
-        data: labels,
-        inverse: true,
-        axisLabel: { color: '#1d2621', fontSize: 12.5, width: 190, overflow: 'truncate' },
-        axisTick: { show: false },
-      },
-      series: [
-        {
-          type: 'boxplot',
-          data: rows.map((r) => [r.min, r.q1, r.median, r.q3, r.max]),
-          itemStyle: { color: GROUP_COLORS[0], borderColor: GROUP_COLORS[0] },
-          boxWidth: ['25%', '55%'],
-        },
-      ],
-    },
-  };
-}
-
-// 相关热图：-1 到 1 的红—米—绿渐变；少于 8 个变量时直接标数值。
-export function correlationHeatmap(labels: string[], matrix: (number | null)[][]): { option: ChartOption; height: number } {
-  const data: [number, number, number][] = [];
-  matrix.forEach((row, i) => row.forEach((v, j) => {
-    if (v !== null) data.push([j, i, v]);
-  }));
-  const n = labels.length;
-  return {
-    height: Math.max(260, n * 34 + 90),
-    option: {
-      grid: { left: 8, right: 12, top: 10, bottom: 64, containLabel: true },
-      tooltip: {
-        trigger: 'item',
-        formatter: (p) => {
-          const d = p as unknown as { data: [number, number, number] };
-          return `${escapeHtml(labels[d.data[1]])} × ${escapeHtml(labels[d.data[0]])}<br/>r = ${d.data[2].toFixed(2)}`;
-        },
-      },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLabel: { color: AXIS, fontSize: 11, interval: 0, rotate: n > 8 ? 40 : 0 },
-        splitArea: { show: true },
-        axisTick: { show: false },
-      },
-      yAxis: {
-        type: 'category',
-        data: labels,
-        inverse: true,
-        axisLabel: { color: AXIS, fontSize: 11, width: 130, overflow: 'truncate' },
-        splitArea: { show: true },
-        axisTick: { show: false },
-      },
-      visualMap: {
-        min: -1,
-        max: 1,
-        calculable: false,
-        orient: 'horizontal',
-        left: 'center',
-        bottom: 0,
-        itemWidth: 12,
-        itemHeight: 90,
-        textStyle: { color: AXIS, fontSize: 11 },
-        inRange: { color: ['#a4442a', '#e9e2d2', '#1f5e46'] },
-      },
-      series: [
-        {
-          type: 'heatmap',
-          data,
-          label: {
-            show: n <= 6,
-            fontSize: 11,
-            color: '#1d2621',
-            formatter: (p) => (p as unknown as { data: [number, number, number] }).data[2].toFixed(2),
-          },
-          emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.3)' } },
-        },
-      ],
     },
   };
 }

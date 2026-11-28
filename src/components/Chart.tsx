@@ -2,7 +2,7 @@ import * as echarts from 'echarts/core';
 import { useEffect, useRef } from 'react';
 import type { ChartOption } from '../lib/charts.ts';
 
-export function Chart({ option, height }: { option: ChartOption; height: number }) {
+export function Chart({ option, height, width }: { option: ChartOption; height: number; width?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
 
@@ -31,5 +31,5 @@ export function Chart({ option, height }: { option: ChartOption; height: number 
     chart.current?.setOption(option, true);
   }, [option]);
 
-  return <div ref={ref} className="chart" style={{ height }} />;
+  return <div ref={ref} className="chart" style={{ height, ...(width ? { width } : {}) }} />;
 }

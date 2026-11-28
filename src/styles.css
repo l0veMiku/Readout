@@ -2494,3 +2494,21 @@ button {
   outline-offset: 3px;
   transition: outline-color 0.2s ease;
 }
+
+
+/* 诊断页图表：热图按固定格子宽度，超出时横向滚动 */
+.chart-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.chart-placeholder {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}

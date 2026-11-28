@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 import type { Dataset, ProModeOptions, Question } from '../types.ts';
 import type { CardItem } from '../lib/groups.ts';
 import type { Correlation } from '../lib/correlation.ts';
 import { corrValue } from '../lib/correlation.ts';
 import type { Diagnostics, IssueLevel } from '../lib/diagnostics.ts';
 import { LEVEL_LABELS, fiveNumbers, kmoBand } from '../lib/diagnostics.ts';
-import { boxplots, correlationHeatmap } from '../lib/charts.ts';
 import { formatCI, formatNumber, formatP, formatPct } from '../lib/text.ts';
-import { Chart } from './Chart.tsx';
+// 箱线图与热图单独拆 chunk：打开诊断页时才加载这两个图表类型。
+const BoxChartLazy = lazy(() => import('./BoxChartLazy.tsx'));
+const HeatChartLazy = lazy(() => import('./HeatChartLazy.tsx'));
 
 interface DiagnosticsPageProps {
   dataset: Dataset;
@@ -40,9 +41,10 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
   const problems = diagnostics.issues.filter((i) => i.level !== 'info').length;
   const worstMissing = diagnostics.missing.filter((m) => m.rate > 0.1).length;
 
-  const box = useMemo(() => {
-    if (!pro.on) return null;
-    const entries = items.flatMap((item) =>
+  // 只准备数据；画图交给懒加载的 BoxChartLazy。
+  const boxRows = useMemo(() => {
+    if (!pro.on) return [];
+    return items.flatMap((item) =>
       (item.kind === 'question' ? [item.question] : item.questions)
         .filter((q) => q.type === 'scale' || q.type === 'numeric')
         .flatMap((q) => {
@@ -50,10 +52,9 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
           return five ? [{ name: q.subTitle ?? q.title, ...five }] : [];
         }),
     );
-    return entries.length > 0 ? boxplots(entries) : null;
   }, [items, rows, pro.on]);
 
-  const heat = useMemo(() => {
+  const heatData = useMemo(() => {
     if (!pro.on || !corr) return null;
     const labels = corr.variables.map((q) => q.subTitle ?? q.title);
     const n = labels.length;
@@ -67,7 +68,7 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
         matrix[j][i] = r;
       }
     }
-    return correlationHeatmap(labels, matrix);
+    return { labels, matrix };
   }, [corr, pro.on]);
 
   return (
@@ -161,7 +162,11 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
 
           <section className="card">
             <h2>分布</h2>
-            {box && <Chart option={box.option} height={box.height} />}
+            {boxRows.length > 0 && (
+              <Suspense fallback={<p className="chart-placeholder" style={{ height: boxRows.length * 36 + 56 }}>图表加载中…</p>}>
+                <BoxChartLazy rows={boxRows} />
+              </Suspense>
+            )}
             <div className="table-scroll">
               <table className="dist">
                 <thead>
@@ -254,11 +259,15 @@ export function DiagnosticsPage({ dataset, items, rows, diagnostics, corr, pro, 
 
           <section className="card">
             <h2>相关</h2>
-            {corr && heat ? (
+            {corr && heatData ? (
               <>
                 <p className="cmp-caption">{corr.sentence}</p>
-                <Chart option={heat.option} height={heat.height} />
-                <p className="hint">变量与「相关分析」页共用选择：{corr.variables.length} 个变量、{corr.pairs.length} 对。</p>
+                <Suspense fallback={<p className="chart-placeholder" style={{ height: heatData.labels.length * 34 + 34 }}>图表加载中…</p>}>
+                  <HeatChartLazy labels={heatData.labels} matrix={heatData.matrix} />
+                </Suspense>
+                <p className="hint">
+                  变量与「相关分析」页共用选择：{corr.variables.length} 个变量、{corr.pairs.length} 对。色带为 R 常用的 RdBu（0 为白）；对角线为 1，已留空。
+                </p>
               </>
             ) : (
               <p className="empty">
