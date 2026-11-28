@@ -226,7 +226,7 @@ export default function App() {
     }
   }, [analysis, stats, scoredRows, baseRows, pro.distribution]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
-  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows, pro) : null), [analysis, pick, scoredRows, pro]);
+  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows, pro) : null), [analysis, pick, scoredRows, pro.on, pro.correction, pro.rankTest]);
   const corr = useMemo(() => (analysis ? correlationFor(analysis, corrVars, scoredRows, { adjust: pro.correction, rank: pro.spearman }) : null), [analysis, corrVars, scoredRows, pro.correction, pro.spearman]);
   // 选的题被忽略、改了题型或被移除后，相关分析的变量跟着去掉。
   useEffect(() => {

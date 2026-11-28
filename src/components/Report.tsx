@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { AIResult, Dataset, ProModeOptions } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import type { Stat } from '../lib/stats.ts';
@@ -15,6 +16,75 @@ import type { CleaningSummary } from '../lib/cleaning.ts';
 import { scoreNote } from '../lib/scores.ts';
 import { CorrBody } from './Correlation.tsx';
 import type { Correlation } from '../lib/correlation.ts';
+
+// 交叉/相关章节只在各自的数据对象或效应量开关变化时重渲染；其它选项开关不触发。
+const MemoComparisonBody = memo(ComparisonBody, (a, b) => a.comparison === b.comparison && a.inReport === b.inReport && (a.pro?.effectSize ?? false) === (b.pro?.effectSize ?? false));
+const MemoCorrBody = memo(CorrBody);
+
+interface QuestionSectionsProps {
+  dataset: Dataset;
+  stats: Record<string, Stat>;
+  reliabilities: Record<string, Reliability | null>;
+  extras: Record<string, ReliabilityExtras | null>;
+  aiResults: Record<string, AIResult>;
+  apaTables: boolean;
+}
+
+// 逐题分析是报告里最重的一块：选项开关只要不影响题目数字或数值格式，就整块跳过重渲染。
+const QuestionSections = memo(function QuestionSections({ dataset, stats, reliabilities, extras, aiResults, apaTables }: QuestionSectionsProps) {
+  return (
+    <>
+      {includedItems(dataset).map((item, i) =>
+        item.kind === 'group' ? (
+          <section className="q-sec" key={item.group.id}>
+            <h3>
+              <span className="qno">{i + 1}</span>
+              {item.group.title}
+              <span className="tag">题组</span>
+            </h3>
+            <p className="stat-line">题组共 {item.questions.length} 个子项，分别统计如下。</p>
+            <GroupBody questions={item.questions} stats={stats} reliability={reliabilities[item.group.id] ?? null} extras={extras[item.group.id] ?? null} />
+          </section>
+        ) : (
+          (() => {
+            const q = item.question;
+            const stat = stats[q.id];
+            const ai = q.type === 'open' ? aiResults[q.id] : undefined;
+            if (!stat) return null;
+            return (
+              <section className="q-sec" key={q.id}>
+                <h3>
+                  <span className="qno">{i + 1}</span>
+                  {q.title}
+                  <span className="tag">{q.derived ? '维度得分' : TYPE_LABELS[q.type]}</span>
+                </h3>
+                {q.derived && <p className="r-note">{scoreNote(q, dataset)}</p>}
+                {stat.n === 0 ? (
+                  <p className="empty">{q.derived ? '按当前的算分条件，没有任何问卷得到得分。' : '这道题没有有效回答。'}</p>
+                ) : (
+                  <>
+                    <p className="stat-line">{apaTables ? apaLine(stat, !!q.derived) : sentence(stat, !!q.derived)}</p>
+                    <QuestionBody stat={stat} bare />
+                  </>
+                )}
+                {q.type === 'open' && stat.n > 0 &&
+                  (ai ? (
+                    <div className="r-ai">
+                      <p className="ai-summary">{ai.summary}</p>
+                      <ThemeList result={ai} />
+                      <p className="ai-note">{aiNote(ai)}</p>
+                    </div>
+                  ) : (
+                    <p className="ai-note">此题未做 AI 归纳，原始回答不放入报告。</p>
+                  ))}
+              </section>
+            );
+          })()
+        ),
+      )}
+    </>
+  );
+});
 
 interface ReportProps {
   correlation: Correlation | null;
@@ -208,54 +278,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
 
       <section className="r-sec">
         <h2>逐题分析</h2>
-        {includedItems(dataset).map((item, i) =>
-          item.kind === 'group' ? (
-            <section className="q-sec" key={item.group.id}>
-              <h3>
-                <span className="qno">{i + 1}</span>
-                {item.group.title}
-                <span className="tag">题组</span>
-              </h3>
-              <p className="stat-line">题组共 {item.questions.length} 个子项，分别统计如下。</p>
-              <GroupBody questions={item.questions} stats={stats} reliability={reliabilities[item.group.id] ?? null} extras={extras[item.group.id] ?? null} />
-            </section>
-          ) : (
-            (() => {
-              const q = item.question;
-              const stat = stats[q.id];
-              const ai = q.type === 'open' ? aiResults[q.id] : undefined;
-              if (!stat) return null;
-              return (
-                <section className="q-sec" key={q.id}>
-                  <h3>
-                    <span className="qno">{i + 1}</span>
-                    {q.title}
-                    <span className="tag">{q.derived ? '维度得分' : TYPE_LABELS[q.type]}</span>
-                  </h3>
-                  {q.derived && <p className="r-note">{scoreNote(q, dataset)}</p>}
-                  {stat.n === 0 ? (
-                    <p className="empty">{q.derived ? '按当前的算分条件，没有任何问卷得到得分。' : '这道题没有有效回答。'}</p>
-                  ) : (
-                    <>
-                      <p className="stat-line">{pro.apaTables ? apaLine(stat, !!q.derived) : sentence(stat, !!q.derived)}</p>
-                      <QuestionBody stat={stat} bare />
-                    </>
-                  )}
-                  {q.type === 'open' && stat.n > 0 &&
-                    (ai ? (
-                      <div className="r-ai">
-                        <p className="ai-summary">{ai.summary}</p>
-                        <ThemeList result={ai} />
-                        <p className="ai-note">{aiNote(ai)}</p>
-                      </div>
-                    ) : (
-                      <p className="ai-note">此题未做 AI 归纳，原始回答不放入报告。</p>
-                    ))}
-                </section>
-              );
-            })()
-          ),
-        )}
+        <QuestionSections dataset={dataset} stats={stats} reliabilities={reliabilities} extras={extras} aiResults={aiResults} apaTables={pro.apaTables} />
       </section>
 
       {comparison && (
@@ -264,14 +287,14 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
           <p className="cmp-caption">
             按「{comparison.groupTitle}」分组，比较各组的「{comparison.compareTitle}」：共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
           </p>
-          <ComparisonBody comparison={comparison} inReport pro={pro} />
+          <MemoComparisonBody comparison={comparison} inReport pro={pro} />
         </section>
       )}
 
       {correlation && (
         <section className="r-sec">
           <h2>相关分析</h2>
-          <CorrBody corr={correlation} inReport />
+          <MemoCorrBody corr={correlation} inReport />
         </section>
       )}
 

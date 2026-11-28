@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import type { ProModeOptions } from '../types.ts';
 import { PRO_MODE_OFF, PRO_MODE_ON } from '../types.ts';
 
@@ -6,21 +8,25 @@ interface RowProps {
   onToggle: () => void;
   title: string;
   why: string;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }
 
+// 一行选项：勾选 + 标题（可选的下拉），说明展开后单独占一行，不会与标题或下一行重叠。
 function Row({ checked, onToggle, title, why, children }: RowProps) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="pro-row">
-      <label className="inline">
-        <input type="checkbox" checked={checked} onChange={onToggle} />
-        <span>{title}</span>
-      </label>
-      {children}
-      <details className="pro-why">
-        <summary>说明</summary>
-        <p>{why}</p>
-      </details>
+    <div className="pro-item">
+      <div className="pro-row">
+        <label className="inline">
+          <input type="checkbox" checked={checked} onChange={onToggle} />
+          <span>{title}</span>
+        </label>
+        {children}
+        <button type="button" className="pro-why-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? '收起' : '说明'}
+        </button>
+      </div>
+      {open && <p className="pro-why">{why}</p>}
     </div>
   );
 }

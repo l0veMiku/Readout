@@ -2227,13 +2227,16 @@ button {
   padding: 4px 0;
 }
 
+.pro-item {
+  border-top: 1px dashed var(--line);
+  padding: 7px 0 7px 14px;
+}
+
 .pro-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
-  padding: 7px 0 7px 14px;
-  border-top: 1px dashed var(--line);
   font-size: 13.5px;
 }
 
@@ -2245,21 +2248,6 @@ button {
   min-width: 0;
 }
 
-.pro-why {
-  flex: none;
-}
-
-.pro-why[open] {
-  flex-basis: 100%;
-}
-
-.pro-why p {
-  margin: 4px 0 0;
-  color: var(--ink-3);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
 .pro-row select {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2268,10 +2256,26 @@ button {
   font-size: 13px;
 }
 
-.pro-why summary {
-  cursor: pointer;
+.pro-why-toggle {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
   color: var(--green);
+  font-family: inherit;
   font-size: 12.5px;
+  cursor: pointer;
+}
+
+.pro-why-toggle:hover {
+  text-decoration: underline;
+}
+
+.pro-why {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .pro-badge {
