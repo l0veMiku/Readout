@@ -1,5 +1,7 @@
 import type { Dataset, Question } from '../types.ts';
 import { likertScore, numericValues, splitMultiDetailed } from './infer.ts';
+import { distributionShape } from './describe.ts';
+import type { Shape } from './describe.ts';
 import { bootstrapIntervals, meanInterval, wilsonInterval } from './intervals.ts';
 import type { BootIntervals, Interval } from './intervals.ts';
 import { ciDigits, formatCI, formatNumber, formatPct, formatPctCI, formatRange, isAnswer } from './text.ts';
@@ -25,8 +27,8 @@ interface Base {
 export type Stat =
   | (Base & { kind: 'single'; options: OptionRow[] })
   | (Base & { kind: 'multi'; options: OptionRow[]; avgSelected: number })
-  | (Base & { kind: 'scale'; levels: OptionRow[]; numeric: boolean; mean: number | null; median: number | null; sd: number | null; top2: number | null; meanCI: Interval | null; top2CI: Interval | null })
-  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[]; meanCI: Interval | null; medianCI: Interval | null; ciPending?: boolean })
+  | (Base & { kind: 'scale'; levels: OptionRow[]; numeric: boolean; mean: number | null; median: number | null; sd: number | null; top2: number | null; meanCI: Interval | null; top2CI: Interval | null; shape?: Shape | null })
+  | (Base & { kind: 'numeric'; mean: number | null; median: number | null; sd: number | null; min: number | null; max: number | null; bins: Bin[]; meanCI: Interval | null; medianCI: Interval | null; ciPending?: boolean; shape?: Shape | null })
   | (Base & { kind: 'open'; avgChars: number; samples: string[] });
 
 export function answersOf(q: Question, rows: Record<string, string>[]) {
@@ -125,10 +127,11 @@ export function withBootstrap(stat: Stat, boot: BootIntervals): Stat {
     bins: stat.bins,
     meanCI: boot.mean,
     medianCI: boot.median,
+    shape: stat.shape,
   };
 }
 
-export function computeStat(q: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean } = {}): Stat {
+export function computeStat(q: Question, rows: Record<string, string>[], opts: { deferBootstrap?: boolean; shape?: boolean } = {}): Stat {
   const { valid, missing } = answersOf(q, rows);
   const base = { n: valid.length, missing };
 
@@ -183,6 +186,7 @@ export function computeStat(q: Question, rows: Record<string, string>[], opts: {
           top2: top2 === null ? null : top2 / xs.length,
           meanCI: meanInterval(xs),
           top2CI: top2 === null ? null : wilsonInterval(top2, xs.length),
+          shape: opts.shape ? distributionShape(xs) : null,
         };
       }
       return { ...base, kind: 'scale', levels: byAppearance(valid), numeric, mean: null, median: null, sd: null, top2: null, meanCI: null, top2CI: null };
@@ -201,6 +205,7 @@ export function computeStat(q: Question, rows: Record<string, string>[], opts: {
       top2: top2 === null ? null : top2 / nums.length,
       meanCI: meanInterval(nums),
       top2CI: top2 === null ? null : wilsonInterval(top2, nums.length),
+      shape: opts.shape ? distributionShape(nums) : null,
     };
   }
   if (q.type === 'numeric') {
@@ -217,6 +222,7 @@ export function computeStat(q: Question, rows: Record<string, string>[], opts: {
       bins: histogram(nums),
       meanCI: null,
       medianCI: null,
+      shape: opts.shape ? distributionShape(nums) : null,
     };
     // 先出点估计和直方图，区间由后台线程算好后用 withBootstrap 补上。
     if (opts.deferBootstrap) return { ...point, ciPending: true };

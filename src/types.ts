@@ -52,6 +52,8 @@ export interface Cleaning {
 
 // 维度得分的缺失规则：complete 要求全部子项有作答；partial80 要求至少 80% 的子项有作答。
 export type ScoreMissing = 'complete' | 'partial80';
+// 维度得分的形式：均值（默认）、求和、z 分。
+export type ScoreForm = 'mean' | 'sum' | 'z';
 
 export interface Dataset {
   fileName: string;
@@ -67,7 +69,53 @@ export interface Dataset {
   cleaning?: Cleaning;
   // 哪些题组生成了维度得分，以及各自的缺失规则；没有生成时不存在。
   scores?: Record<string, ScoreMissing>;
+  // 各题组得分的形式；缺省即均值。
+  scoreForms?: Record<string, ScoreForm>;
 }
+
+// 专业模式：报告页的开关，默认全关，所有分析回到默认口径；状态只在内存里。
+export type CorrectionMethod = 'holm' | 'bh';
+
+export interface ProModeOptions {
+  on: boolean;
+  // 多重比较校正：null 表示不校正。
+  correction: CorrectionMethod | null;
+  effectSize: boolean;
+  alphaCI: boolean;
+  distribution: boolean;
+  missingTable: boolean;
+  apaTables: boolean;
+  spearman: boolean;
+  rankTest: boolean;
+  scoreForms: boolean;
+  factorCheck: boolean;
+}
+
+export const PRO_MODE_OFF: ProModeOptions = {
+  on: false,
+  correction: null,
+  effectSize: false,
+  alphaCI: false,
+  distribution: false,
+  missingTable: false,
+  apaTables: false,
+  spearman: false,
+  rankTest: false,
+  scoreForms: false,
+  factorCheck: false,
+};
+
+// 打开专业模式时的默认状态：A 档整套启用，B 档逐项自选。
+export const PRO_MODE_ON: ProModeOptions = {
+  ...PRO_MODE_OFF,
+  on: true,
+  correction: 'holm',
+  effectSize: true,
+  alphaCI: true,
+  distribution: true,
+  missingTable: true,
+  apaTables: true,
+};
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'mixed';
 

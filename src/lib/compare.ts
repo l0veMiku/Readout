@@ -2,6 +2,7 @@ import type { Question } from '../types.ts';
 import { bootstrapIntervals, chisqCDF, logGamma, meanInterval, tCDF, tQuantile, wilsonInterval } from './intervals.ts';
 import type { Interval } from './intervals.ts';
 import { likertScore, numericValues, splitMulti } from './infer.ts';
+import { cramersV } from './effects.ts';
 import { mean, median, sampleSD } from './stats.ts';
 import { formatNumber, formatP, formatRange, isAnswer } from './text.ts';
 
@@ -130,6 +131,10 @@ export function fisherTwoRows(first: number[], colTotals: number[]): number | nu
 export interface TestResult extends ChisqResult {
   method: 'chisq' | 'fisher';
   unreliable: boolean;
+  // Cramér's V（2×2 表即 φ）；不足两行两列时为 null。
+  effect: number | null;
+  // 专业模式校正后的 p；未校正时不存在。
+  pAdjusted?: number;
 }
 
 export function independenceTest(table: number[][]): TestResult | null {
@@ -149,11 +154,11 @@ export function independenceTest(table: number[][]): TestResult | null {
       unreliable = true;
     }
   }
-  return { ...cs, method, p, unreliable };
+  return { ...cs, method, p, unreliable, effect: cramersV(table) };
 }
 
 export function formatTest(test: TestResult): string {
-  const p = `p = ${formatP(test.p)}`;
+  const p = test.pAdjusted !== undefined ? `校正后 p = ${formatP(test.pAdjusted)}（原 p = ${formatP(test.p)}）` : `p = ${formatP(test.p)}`;
   const base = test.method === 'fisher' ? `Fisher 精确检验，${p}` : `卡方 = ${formatNumber(test.statistic, 2)}，df = ${test.df}，${p}`;
   return `${base}${test.unreliable ? '（部分类别人数过少，检验结果仅供参考）' : ''}`;
 }
@@ -185,6 +190,11 @@ export interface Diff {
   upper: number;
   p: number | null;
   d: number | null;
+  // 专业模式：秩检验的 p 与效应量 r（Mann–Whitney U），以及校正后的 p 与最终判定。
+  rankP?: number | null;
+  rankR?: number | null;
+  pAdjusted?: number | null;
+  clear?: boolean;
 }
 
 export interface CompareRow {
@@ -200,6 +210,7 @@ export interface Comparison {
   compare: string;
   groupTitle: string;
   compareTitle: string;
+  compareKind: Question['type'];
   mode: 'prop' | 'mean';
   multi: boolean;
   n: number;
@@ -210,6 +221,17 @@ export interface Comparison {
   // 只在 deferBootstrap 且对比题是数值题时存在：各组待重抽样的取值，以及「区间还没到」的标记。
   medianSamples?: number[][];
   medianPending?: boolean;
+  // 均值模式下各组的原始取值，秩检验要用。
+  groupSamples?: number[][];
+  // 专业模式的秩检验结果：各组相对基准组的 Mann–Whitney U，以及整体的 Kruskal–Wallis。
+  rank?: RankSummary;
+  // 专业模式的校正方法与被校正的比较数。
+  adjust?: { method: 'holm' | 'bh'; m: number } | null;
+}
+
+export interface RankSummary {
+  pairs: ({ p: number; r: number; u: number } | null)[];
+  overall: { h: number; df: number; p: number; epsilon2: number } | null;
 }
 
 type Amount = (x: number) => string;
@@ -261,6 +283,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
     compare: compare.id,
     groupTitle: group.title,
     compareTitle: compare.title,
+    compareKind: compare.type,
     multi: compare.type === 'multi',
     n: picked.length,
     groups,
@@ -302,6 +325,7 @@ export function compareQuestions(group: Question, compare: Question, rows: Recor
       rows: [{ name: '均值', cells, diffs, test: null, sentence: parts.length ? `${parts.join('；')}。` : '无法比较各组均值。' }],
       sentence,
       ...(numeric && opts.deferBootstrap ? { medianSamples: perGroup, medianPending: true } : {}),
+      groupSamples: perGroup,
     };
   }
 

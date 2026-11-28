@@ -1,9 +1,11 @@
-import type { AIResult, Dataset } from '../types.ts';
+import type { AIResult, Dataset, ProModeOptions } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import type { Stat } from '../lib/stats.ts';
 import { validRowCount } from '../lib/stats.ts';
 import { includedItems } from '../lib/groups.ts';
-import { formatDateTime } from '../lib/text.ts';
+import { formatDateTime, formatPct } from '../lib/text.ts';
+import type { ReliabilityExtras } from '../lib/reliabilityExtras.ts';
+import { CORRECTION_LABELS } from '../lib/comparePro.ts';
 import { GroupBody, QuestionBody, ThemeList, aiNote, sentence } from './QuestionView.tsx';
 import { ComparisonBody } from './Compare.tsx';
 import type { Comparison } from '../lib/compare.ts';
@@ -25,10 +27,32 @@ interface ReportProps {
   aiResults: Record<string, AIResult>;
   rows: Record<string, string>[];
   cleaning: CleaningSummary | null;
+  pro: ProModeOptions;
+  extras: Record<string, ReliabilityExtras | null>;
 }
 
-export function Report({ correlation, comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning }: ReportProps) {
+export function Report({ correlation, comparison, dataset, stats, findings, title, aiResults, reliabilities, rows, cleaning, pro, extras }: ReportProps) {
   const included = dataset.questions.filter((q) => q.included);
+  // 专业模式下的口径说明；没启用任何项时为空。
+  const proLines = [
+    pro.correction
+      ? `多重比较校正用 ${CORRECTION_LABELS[pro.correction]}${comparison?.adjust ? `（交叉分析 ${comparison.adjust.m} 处比较）` : ''}${correlation?.adjust ? `（相关分析 ${correlation.adjust.m} 对）` : ''}；校正只用于“是否算明确差别”的判定，表中 95% 区间未校正。`
+      : '',
+    pro.effectSize ? "效应量：Cramér's V（2×2 表即 φ），0.1、0.3、0.5 约对应小、中、大。" : '',
+    pro.alphaCI ? "信度区间：Cronbach's α 的 95% Bootstrap 区间（固定种子、百分位法，可复现）。" : '',
+    pro.distribution ? '分布描述：偏度与峰度按 type 2 公式（与 SPSS 默认一致），标准误分别为 √(6/n) 与 √(24/n)。' : '',
+    pro.missingTable ? '缺失情况：逐题列出有效回答、缺失份数与缺失率；缺失率 = 缺失份数 ÷（有效回答 + 缺失份数）。' : '',
+    pro.apaTables ? '表格为三线表，数值写作 M、SD 与 95% CI。' : '',
+    pro.spearman ? '相关分析用 Spearman 秩相关；取值重复较多时 p 值为近似，区间为 Fisher z 近似。' : '',
+    pro.rankTest ? '分组比较使用 Mann–Whitney U（各组相对基准组）与 Kruskal–Wallis（整体），效应量为 r 与 ε²；均值差与区间仍按 Welch 法列出。' : '',
+    pro.scoreForms ? '维度得分的形式（均值、求和或 z 分）见各得分章节；z 分按计入分析的问卷标准化。' : '',
+    pro.factorCheck ? '因子前置检验：KMO 与 Bartlett 球形检验；单因子 ω 以第一主成分载荷近似，依赖单因子假设。' : '',
+  ].filter(Boolean);
+  // “数据质量”一节：有分布形态的题（量表、数值、得分）。
+  const shapes = included.flatMap((q) => {
+    const s = stats[q.id];
+    return s && (s.kind === 'scale' || s.kind === 'numeric') && s.shape ? [{ q, shape: s.shape }] : [];
+  });
   const anyReversed = dataset.questions.some((q) => q.included && q.reversed);
   const anyReliability = Object.values(reliabilities).some((r) => r !== null && r !== undefined);
   const reversedNotes = dataset.groups.flatMap((g) => {
@@ -62,9 +86,12 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
   if (scoreCount > 0) kinds.push(`维度得分 ${scoreCount} 个`);
 
   return (
-    <article className="page">
+    <article className={`page${pro.apaTables ? ' apa' : ''}`}>
       <section className="cover">
-        <p className="cover-label">问卷分析报告</p>
+        <p className="cover-label">
+          问卷分析报告
+          {pro.on && <span className="pro-badge">专业模式</span>}
+        </p>
         <h1>{title || '未命名报告'}</h1>
         <dl className="cover-meta">
           <div>
@@ -108,6 +135,77 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
         </p>
       </section>
 
+      {pro.on && (pro.missingTable || pro.distribution) && (
+        <section className="r-sec">
+          <h2>数据质量</h2>
+          {pro.missingTable && (
+            <>
+              <h3>逐题缺失率</h3>
+              <div className="table-scroll">
+                <table className="dist">
+                  <thead>
+                    <tr>
+                      <th>题目</th>
+                      <th>有效回答</th>
+                      <th>缺失</th>
+                      <th>缺失率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {included
+                      .filter((q) => !q.derived)
+                      .map((q) => {
+                        const s = stats[q.id];
+                        if (!s) return null;
+                        const total = s.n + s.missing;
+                        return (
+                          <tr key={q.id}>
+                            <td>{q.subTitle ?? q.title}</td>
+                            <td>{s.n}</td>
+                            <td>{s.missing}</td>
+                            <td>{total ? formatPct(s.missing / total) : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          {pro.distribution && shapes.length > 0 && (
+            <>
+              <h3>分布形态</h3>
+              <div className="table-scroll">
+                <table className="dist">
+                  <thead>
+                    <tr>
+                      <th>变量</th>
+                      <th>n</th>
+                      <th>偏度（SE）</th>
+                      <th>峰度（SE）</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shapes.map(({ q, shape }) => (
+                      <tr key={q.id}>
+                        <td>{q.subTitle ?? q.title}</td>
+                        <td>{shape.n}</td>
+                        <td>
+                          {shape.skew.toFixed(2)}（{shape.skewSE.toFixed(2)}）
+                        </td>
+                        <td>
+                          {shape.kurtosis.toFixed(2)}（{shape.kurtosisSE.toFixed(2)}）
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       <section className="r-sec">
         <h2>逐题分析</h2>
         {includedItems(dataset).map((item, i) =>
@@ -119,7 +217,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
                 <span className="tag">题组</span>
               </h3>
               <p className="stat-line">题组共 {item.questions.length} 个子项，分别统计如下。</p>
-              <GroupBody questions={item.questions} stats={stats} reliability={reliabilities[item.group.id] ?? null} />
+              <GroupBody questions={item.questions} stats={stats} reliability={reliabilities[item.group.id] ?? null} extras={extras[item.group.id] ?? null} />
             </section>
           ) : (
             (() => {
@@ -139,7 +237,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
                     <p className="empty">{q.derived ? '按当前的算分条件，没有任何问卷得到得分。' : '这道题没有有效回答。'}</p>
                   ) : (
                     <>
-                      <p className="stat-line">{sentence(stat, !!q.derived)}</p>
+                      <p className="stat-line">{pro.apaTables ? apaLine(stat, !!q.derived) : sentence(stat, !!q.derived)}</p>
                       <QuestionBody stat={stat} bare />
                     </>
                   )}
@@ -166,7 +264,7 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
           <p className="cmp-caption">
             按「{comparison.groupTitle}」分组，比较各组的「{comparison.compareTitle}」：共 {comparison.n} 条记录同时有效回答了这两道题，分成 {comparison.groups.length} 组。
           </p>
-          <ComparisonBody comparison={comparison} inReport />
+          <ComparisonBody comparison={comparison} inReport pro={pro} />
         </section>
       )}
 
@@ -279,10 +377,27 @@ export function Report({ correlation, comparison, dataset, stats, findings, titl
               </dd>
             </>
           )}
+          {pro.on && proLines.length > 0 && (
+            <>
+              <dt>专业模式</dt>
+              <dd>{proLines.join(' ')}</dd>
+            </>
+          )}
           <dt>统计边界</dt>
           <dd>未做加权。区间和 p 值只反映随机抽样带来的误差，不能修正样本本身的偏差（如自愿填写、覆盖不全）。</dd>
         </dl>
       </section>
     </article>
   );
+}
+
+// 论文数值格式：M = 3.16，SD = 0.87，95% CI [3.02, 3.34]，n = 128。
+function apaLine(stat: Stat, derived: boolean): string {
+  if ((stat.kind === 'scale' || stat.kind === 'numeric') && stat.mean !== null) {
+    const sd = stat.sd === null ? '' : `，SD = ${stat.sd.toFixed(2)}`;
+    const ci = stat.meanCI ? `，95% CI [${stat.meanCI.lower.toFixed(2)}, ${stat.meanCI.upper.toFixed(2)}]` : '';
+    const miss = stat.missing > 0 ? `（另有 ${stat.missing} 份没有${derived ? '得分' : '作答'}）` : '';
+    return `${derived ? '有效得分：' : ''}M = ${stat.mean.toFixed(2)}${sd}${ci}，n = ${stat.n}${miss}。`;
+  }
+  return sentence(stat, derived);
 }

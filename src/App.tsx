@@ -31,6 +31,12 @@ import { buildReportHtml } from './lib/exportHtml.ts';
 import { downloadText, reportFileName } from './lib/reportFile.ts';
 import { exportReportPdf } from './lib/exportPdf.ts';
 import type { AIResult, Cleaning, Dataset, Question, QuestionType, ScoreMissing } from './types.ts';
+import { PRO_MODE_OFF } from './types.ts';
+import type { ProModeOptions, ScoreForm } from './types.ts';
+import { setScoreForm } from './lib/scores.ts';
+import { reliabilityExtras } from './lib/reliabilityExtras.ts';
+import type { ReliabilityExtras } from './lib/reliabilityExtras.ts';
+import { ProModePanel } from './components/ProModePanel.tsx';
 
 type View = 'home' | 'workspace' | 'compare' | 'correlation' | 'report';
 
@@ -55,6 +61,8 @@ export default function App() {
   const [pickNotice, setPickNotice] = useState('');
   // 相关分析选的变量；和交叉分析一样只存在内存里，刷新即清除。
   const [corrVars, setCorrVars] = useState<string[]>([]);
+  // 专业模式：报告页的开关，默认全关；只在内存里，刷新即清除。
+  const [pro, setPro] = useState<ProModeOptions>(PRO_MODE_OFF);
   // 一键 PDF 的进度；非空时按钮换成进度与取消。
   const [exportState, setExportState] = useState<{ done: number; total: number } | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
@@ -64,7 +72,12 @@ export default function App() {
   latest.current = dataset;
 
   // 题目对象在改题型/忽略时才会换新，按 rows + 题目对象缓存统计，避免每次编辑重跑全量 Bootstrap。
-  const statCache = useRef(new WeakMap<Record<string, string>[], WeakMap<Question, Stat>>());
+  // 专业模式打开分布描述时，统计对象多一个 shape 字段，所以两种口径各用一份缓存。
+  const statCaches = useRef({
+    plain: new WeakMap<Record<string, string>[], WeakMap<Question, Stat>>(),
+    shape: new WeakMap<Record<string, string>[], WeakMap<Question, Stat>>(),
+  });
+  const statCache = () => (pro.distribution ? statCaches.current.shape : statCaches.current.plain);
 
   // 数值题的区间在后台线程补上，每补上一道题就重取一次 stats。
   const [bootTick, setBootTick] = useState(0);
@@ -180,20 +193,21 @@ export default function App() {
       if (!q.included) continue;
       // 普通题目读原始行，得分题目读带得分列的行；两组行的身份各自稳定，缓存互不干扰。
       const rows = q.derived ? scoredRows : baseRows;
-      let cache = statCache.current.get(rows);
+      const caches = statCache();
+      let cache = caches.get(rows);
       if (!cache) {
         cache = new WeakMap();
-        statCache.current.set(rows, cache);
+        caches.set(rows, cache);
       }
       let stat = cache.get(q);
       if (!stat) {
-        stat = computeStat(q, rows, { deferBootstrap: true });
+        stat = computeStat(q, rows, { deferBootstrap: true, shape: pro.distribution });
         cache.set(q, stat);
       }
       map[q.id] = stat;
     }
     return map;
-  }, [analysis, scoredRows, baseRows, bootTick]);
+  }, [analysis, scoredRows, baseRows, bootTick, pro.distribution]);
   // 首屏不等重抽样：点估计和直方图先渲染，再把缺区间的数值题交给后台线程。
   useEffect(() => {
     if (!analysis) return;
@@ -205,14 +219,14 @@ export default function App() {
       bootstrapPool.run(numericSamples(q, rows), (boot) => {
         booting.current.delete(q);
         // 期间换了文件或改过这道题时，写进去的是旧对象的结果，不会再被读到。
-        statCache.current.get(rows)?.set(q, withBootstrap(stat, boot));
+        statCache().get(rows)?.set(q, withBootstrap(stat, boot));
         setBootTick((t) => t + 1);
       });
     }
-  }, [analysis, stats, scoredRows, baseRows]);
+  }, [analysis, stats, scoredRows, baseRows, pro.distribution]);
   // 各组中位数的区间在后台线程算：均值和差值先出，算完一组补一组。
-  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows) : null), [analysis, pick, scoredRows]);
-  const corr = useMemo(() => (analysis ? correlationFor(analysis, corrVars, scoredRows) : null), [analysis, corrVars, scoredRows]);
+  const baseComparison = useMemo(() => (analysis ? comparisonFor(analysis, pick, scoredRows, pro) : null), [analysis, pick, scoredRows, pro]);
+  const corr = useMemo(() => (analysis ? correlationFor(analysis, corrVars, scoredRows, { adjust: pro.correction, rank: pro.spearman }) : null), [analysis, corrVars, scoredRows, pro.correction, pro.spearman]);
   // 选的题被忽略、改了题型或被移除后，相关分析的变量跟着去掉。
   useEffect(() => {
     if (!analysis) return;
@@ -262,6 +276,13 @@ export default function App() {
     for (const g of dataset.groups) map[g.id] = reliability(dataset.questions.filter((q) => q.groupId === g.id && q.included), baseRows);
     return map;
   }, [dataset, baseRows]);
+  // 专业模式的信度扩展：α 区间、KMO、Bartlett、单因子 ω。
+  const extras = useMemo(() => {
+    const map: Record<string, ReliabilityExtras | null> = {};
+    if (!dataset) return map;
+    for (const g of dataset.groups) map[g.id] = reliabilityExtras(dataset.questions.filter((q) => q.groupId === g.id && q.included), baseRows, pro);
+    return map;
+  }, [dataset, baseRows, pro.alphaCI, pro.factorCheck, pro.on]);
   const cleaning = useMemo<CleaningSummary | null>(() => (dataset ? cleaningSummary(dataset) : null), [dataset]);
   const applyCleaning = (next: Cleaning | undefined) => setDataset((d) => (d ? { ...d, cleaning: next } : d));
 
@@ -283,6 +304,7 @@ export default function App() {
   const split = (groupId: string) => setDataset((d) => (d ? splitGroup(d, groupId) : d));
   const reverse = (id: string) => setDataset((d) => (d ? toggleReversed(d, id) : d));
   const score = (groupId: string, missing: ScoreMissing | null) => setDataset((d) => (d ? setScore(d, groupId, missing) : d));
+  const scoreForm = (groupId: string, form: ScoreForm) => setDataset((d) => (d ? setScoreForm(d, groupId, form) : d));
 
   const runAI = async (q: Question) => {
     if (!dataset) return;
@@ -359,15 +381,19 @@ export default function App() {
             onOpenSettings={() => setAiOpen(true)}
             onRun={runAI}
             reliabilities={reliabilities}
+            extras={extras}
             onToggleReversed={reverse}
             rows={baseRows}
             scoreStates={scoreList}
             onScore={score}
+            onScoreForm={scoreForm}
+            scoreFormsEnabled={pro.on && pro.scoreForms}
             cleaning={cleaning}
             onOpenCleaning={() => setCleaningOpen(true)}
           />
         ) : showCompare && analysis ? (
           <ComparePage
+            pro={pro}
             dataset={analysis}
             pick={pick}
             notice={pickNotice}
@@ -381,6 +407,7 @@ export default function App() {
           <CorrelationPage dataset={analysis} selected={corrVars} onToggle={toggleCorr} onClear={() => setCorrVars([])} corr={corr} />
         ) : showReport && analysis ? (
           <div className="report-wrap">
+            <ProModePanel pro={pro} onChange={setPro} />
             <div className="report-bar">
               <p className="report-tip">导出或打印的文件包含问卷的聚合结果与开放题引文，请自行确认分享范围。</p>
               <div className="report-exports">
@@ -406,7 +433,7 @@ export default function App() {
               </div>
             </div>
             {pendingIntervals > 0 && <p className="alert report-pending">还有 {pendingIntervals} 处 95% 区间在后台计算，算完后才能打印或导出。</p>}
-            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} />
+            <Report dataset={analysis} stats={stats} findings={findings} title={title} aiResults={aiResults} comparison={comparison} correlation={corr} reliabilities={reliabilities} rows={baseRows} cleaning={cleaning} pro={pro} extras={extras} />
           </div>
         ) : (
           <Home onLoad={load} onDemo={loadDemo} resumeTitle={dataset ? title : undefined} onResume={() => go('workspace')} />

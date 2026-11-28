@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Dataset } from '../types.ts';
 import { buildDataset } from './parse.ts';
-import { scoreId, scoreNote, scoreStates, setScore, withScores } from './scores.ts';
+import { scoreId, scoreNote, scoreStates, setScore, setScoreForm, withScores } from './scores.ts';
+import { splitGroup } from './groups.ts';
 import { evaluateCleaning, newRule } from './cleaning.ts';
 import { computeStat, validRowCount } from './stats.ts';
 
@@ -121,4 +122,38 @@ test('a score behaves like a numeric question without changing cleaning or sampl
     evaluateCleaning(thin).status,
     evaluateCleaning({ ...ds, cleaning: thin.cleaning }).status,
   );
+});
+
+test('score forms switch between mean, sum and z without touching the items', () => {
+  const mean = generated();
+  const meanValues = values(mean).map((v) => (v === '' ? null : Number(v)));
+
+  const sum = setScoreForm(mean, mean.groups[0].id, 'sum');
+  // 第 4 份答了 5 道题，均值 8/5，求和就是 8。
+  assert.deepEqual(values(sum), ['15', '', '', '8']);
+  assert.equal(scoreStates(sum, sum.rows)[0].form, 'sum');
+
+  const z = setScoreForm(mean, mean.groups[0].id, 'z');
+  const zValues = values(z).map((v) => (v === '' ? null : Number(v))).filter((v): v is number => v !== null);
+  assert.equal(zValues.length, 2);
+  const mu = zValues.reduce((s, v) => s + v, 0) / zValues.length;
+  const sd = Math.sqrt(zValues.reduce((s, v) => s + (v - mu) ** 2, 0) / (zValues.length - 1));
+  assert.ok(Math.abs(mu) < 1e-12);
+  assert.ok(Math.abs(sd - 1) < 1e-12);
+  // 与均值形式相比，只有缩放没有重排。
+  assert.equal(zValues.length, meanValues.filter((v) => v !== null).length);
+
+  // 选回均值时字段被删掉，行为与默认一致。
+  const back = setScoreForm(z, z.groups[0].id, 'mean');
+  assert.equal(back.scoreForms, undefined);
+  assert.deepEqual(values(back), values(mean));
+});
+
+test('splitting a group clears both the score and its form', () => {
+  const ds = setScoreForm(generated(), make().groups[0].id, 'sum');
+  const groupId = make().groups[0].id;
+  const split = splitGroup(ds, groupId);
+  assert.equal(split.scores, undefined);
+  assert.equal(split.scoreForms, undefined);
+  assert.deepEqual(scoreStates(split, split.rows), []);
 });

@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import type { Dataset, Question } from '../types.ts';
-import { TYPE_LABELS } from '../types.ts';
+import type { Dataset, ProModeOptions, Question } from '../types.ts';
+import { PRO_MODE_OFF, TYPE_LABELS } from '../types.ts';
 import { canCompare, compareQuestions, formatTest } from '../lib/compare.ts';
-import type { Comparison, Diff, MeanCell } from '../lib/compare.ts';
+import type { Comparison, Diff, MeanCell, TestResult } from '../lib/compare.ts';
+import { CORRECTION_LABELS, withProMode } from '../lib/comparePro.ts';
 import { GROUP_COLORS, dotIntervals } from '../lib/charts.ts';
 import { sampleNote } from '../lib/stats.ts';
 import { ciDigits, formatCI, formatNumber, formatP, formatPct, formatPctCI, formatRange } from '../lib/text.ts';
@@ -22,14 +23,15 @@ export const pickStillValid = (dataset: Dataset, pick: ComparisonPick | null) =>
   return isGroupQuestion(g) && (pick.compare === '' || canCompare(g ?? null, c ?? null));
 };
 
-const excludesZero = (d: Diff) => d.lower > 0 || d.upper < 0;
+// 判定：专业模式给了校正后的判定就用它，否则看区间是否不含 0。
+const isClear = (d: Diff) => d.clear ?? (d.lower > 0 || d.upper < 0);
 
 const diffCell = (d: Diff | null, pct: boolean) => {
   if (!d) return <td className="cmp-diff">—</td>;
   const amount = (x: number) => (pct ? `${formatNumber(x * 100, 1)} 个百分点` : formatNumber(x, 2));
   const range = (x: number) => (pct ? formatNumber(x * 100, 1) : formatNumber(x, 2));
   return (
-    <td className={`cmp-diff${excludesZero(d) ? ' clear' : ''}`}>
+    <td className={`cmp-diff${isClear(d) ? ' clear' : ''}`}>
       <b>
         {d.diff > 0 ? '+' : ''}
         {amount(d.diff)}
@@ -37,21 +39,25 @@ const diffCell = (d: Diff | null, pct: boolean) => {
       <span className="ci">95% 区间 {formatRange(d.lower, d.upper, range)}</span>
       {!pct && (
         <span className="ci">
-          {d.p === null ? '' : `p ${formatP(d.p)}`} · d {d.d === null ? '—' : d.d.toFixed(2)}
+          {d.rankP !== undefined && d.rankP !== null
+            ? `秩检验 p ${formatP(d.rankP)} · r ${d.rankR === null || d.rankR === undefined ? '—' : d.rankR.toFixed(2)}`
+            : `${d.p === null ? '' : `p ${formatP(d.p)}`} · d ${d.d === null ? '—' : d.d.toFixed(2)}`}
         </span>
       )}
+      {d.pAdjusted !== undefined && d.pAdjusted !== null && <span className="ci">校正后 p {formatP(d.pAdjusted)}</span>}
     </td>
   );
 };
 
-export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null, rows: Record<string, string>[] = dataset.rows) {
+export function comparisonFor(dataset: Dataset, pick: ComparisonPick | null, rows: Record<string, string>[] = dataset.rows, pro: ProModeOptions = PRO_MODE_OFF) {
   if (!pick?.group || !pick.compare || !pickStillValid(dataset, pick)) return null;
   const g = dataset.questions.find((q) => q.id === pick.group);
   const c = dataset.questions.find((q) => q.id === pick.compare);
-  return g && c ? compareQuestions(g, c, rows, { deferBootstrap: true }) : null;
+  const comparison = g && c ? compareQuestions(g, c, rows, { deferBootstrap: true }) : null;
+  return comparison ? withProMode(comparison, pro) : null;
 }
 
-export function ComparisonBody({ comparison, inReport }: { comparison: Comparison; inReport?: boolean }) {
+export function ComparisonBody({ comparison, inReport, pro = PRO_MODE_OFF }: { comparison: Comparison; inReport?: boolean; pro?: ProModeOptions }) {
   const block = inReport ? 'q-sec' : 'card';
   const H = inReport ? 'h3' : 'h2';
   const { groups, rows, mode, multi } = comparison;
@@ -83,11 +89,21 @@ export function ComparisonBody({ comparison, inReport }: { comparison: Compariso
 
   const digits = (c: MeanCell) => ciDigits(c.mean);
   const notes = groups.filter((g) => sampleNote(g.n)).map((g) => `「${g.name}」${sampleNote(g.n)}`);
-  if (multi) notes.push('各选项分别检验，未做多重比较校正。');
+  if (multi) notes.push(comparison.adjust ? '各选项分别检验，p 值已做多重比较校正。' : '各选项分别检验，未做多重比较校正。');
   if (comparison.medianPending) notes.push('各组中位数的 95% 区间还在后台计算，算完后补上。');
   if (shown.length < groups.length) notes.push(`图中只画人数最多的 8 组，表格列出全部。`);
   if (chartRows.length < rows.length) notes.push(`图中只画人数最多的 ${chartRows.length} 个选项，表格列出全部。`);
-  const tests = multi ? rows.flatMap((r) => (r.test ? [`「${r.name}」：${formatTest(r.test)}`] : [])) : comparison.test ? [formatTest(comparison.test)] : [];
+  if (comparison.adjust) notes.push(`${CORRECTION_LABELS[comparison.adjust.method]} 校正：共 ${comparison.adjust.m} 处比较；表中区间未校正，加粗按校正后 p < 0.05。`);
+  if (comparison.rank) notes.push('秩检验比较的是分布而不是均值；表中的均值差与区间仍按 Welch 法给出。');
+  const withEffect = (test: TestResult) => {
+    const text = formatTest(test);
+    return pro.effectSize && test.effect !== null ? `${text}，Cramér's V = ${formatNumber(test.effect, 2)}` : text;
+  };
+  const tests = multi ? rows.flatMap((r) => (r.test ? [`「${r.name}」：${withEffect(r.test)}`] : [])) : comparison.test ? [withEffect(comparison.test)] : [];
+  if (comparison.rank?.overall) {
+    const o = comparison.rank.overall;
+    tests.push(`Kruskal–Wallis H = ${formatNumber(o.h, 2)}，df = ${o.df}，p = ${formatP(o.p)}，ε² = ${formatNumber(o.epsilon2, 3)}（整体秩检验）`);
+  }
 
   return (
     <>
@@ -168,7 +184,7 @@ export function ComparisonBody({ comparison, inReport }: { comparison: Compariso
   );
 }
 
-export function ComparePage({ dataset, pick, notice, onSelect, comparison }: { dataset: Dataset; pick: ComparisonPick | null; notice: string; onSelect: (pick: ComparisonPick) => void; comparison: Comparison | null }) {
+export function ComparePage({ dataset, pick, notice, onSelect, comparison, pro = PRO_MODE_OFF }: { dataset: Dataset; pick: ComparisonPick | null; notice: string; onSelect: (pick: ComparisonPick) => void; comparison: Comparison | null; pro?: ProModeOptions }) {
   const groupOptions = dataset.questions.filter((q) => q.included);
 
   const label = (q: Question, role: 'group' | 'compare') => {
@@ -217,7 +233,7 @@ export function ComparePage({ dataset, pick, notice, onSelect, comparison }: { d
         )}
       </header>
       {comparison ? (
-        <ComparisonBody comparison={comparison} />
+        <ComparisonBody comparison={comparison} pro={pro} />
       ) : (
         <section className="card">
           <p className="empty">选好分组题和对比题后，这里会出现结论、各组图表和分组表。</p>

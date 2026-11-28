@@ -66,9 +66,12 @@ export function splitGroup(dataset: Dataset, groupId: string): Dataset {
   // 题组没了，它的维度得分也不该留下；否则重新合并出同一个题组 id 时得分会自己回来。
   const scores = { ...(dataset.scores ?? {}) };
   delete scores[groupId];
+  const forms = { ...(dataset.scoreForms ?? {}) };
+  delete forms[groupId];
   return prune({
     ...dataset,
     scores: Object.keys(scores).length > 0 ? scores : undefined,
+    scoreForms: Object.keys(forms).length > 0 ? forms : undefined,
     groups: dataset.groups.filter((g) => g.id !== groupId),
     questions: dataset.questions.map((q) => (q.groupId === groupId ? { ...q, groupId: undefined, subTitle: undefined } : q)),
   });

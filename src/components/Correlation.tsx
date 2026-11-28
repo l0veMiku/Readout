@@ -5,7 +5,8 @@ import { isCorrQuestion } from '../lib/correlation.ts';
 import type { Correlation, CorrPair } from '../lib/correlation.ts';
 import { formatCI, formatNumber, formatP } from '../lib/text.ts';
 
-const excludesZero = (p: CorrPair) => !!p.ci && (p.ci.lower > 0 || p.ci.upper < 0);
+// 判定：专业模式给了校正后的判定就用它，否则看区间是否不含 0。
+const isClear = (p: CorrPair) => p.clear ?? (!!p.ci && (p.ci.lower > 0 || p.ci.upper < 0));
 
 export const varLabel = (q: Question) => q.subTitle ?? q.title;
 
@@ -41,9 +42,9 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
   const block = inReport ? 'q-sec' : 'card findings';
   const H = inReport ? 'h3' : 'h2';
   const notes = [
-    '95% 区间不含 0 的系数加粗。',
-    `${m} 个变量两两检验，共 ${pairs.length} 对，未做多重比较校正。`,
-    '每一对只用两者都有作答的问卷（成对删除）；对角线是各变量的有效样本量。',
+    corr.adjust ? `按 ${corr.adjust.method === 'holm' ? 'Holm' : 'Benjamini–Hochberg'} 校正后 p < 0.05 的系数加粗（共校正 ${corr.adjust.m} 对）；区间未校正。` : '95% 区间不含 0 的系数加粗。',
+    corr.adjust ? `${m} 个变量两两检验，共 ${pairs.length} 对。` : `${m} 个变量两两检验，共 ${pairs.length} 对，未做多重比较校正。`,
+    corr.method === 'spearman' ? 'Spearman 秩相关：取值有重复时 p 值为近似；每一对只用两者都有作答的问卷。' : '每一对只用两者都有作答的问卷（成对删除）；对角线是各变量的有效样本量。',
   ];
   if (pairs.some((p) => p.r !== null && !p.ci)) notes.push('成对样本只有 3 份的变量对不显示区间：Fisher z 需要 4 份以上。');
   // 展开/收起明细时矩阵不重建：几十个变量时矩阵有上千个格子，重建一下就是一次明显卡顿。
@@ -86,7 +87,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                     );
                   }
                   return (
-                    <td key={col.id} className={excludesZero(p) ? 'clear' : ''}>
+                    <td key={col.id} className={isClear(p) ? 'clear' : ''}>
                       <b>{formatNumber(p.r, 2)}</b>
                       <span className="ci">{p.ci ? formatCI(p.ci, 2) : '样本不足 4 份'}</span>
                     </td>
@@ -123,6 +124,7 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                   <th>r</th>
                   <th>95% 区间</th>
                   <th>p</th>
+                  {corr.adjust && <th>校正后 p</th>}
                 </tr>
               </thead>
               <tbody>
@@ -132,14 +134,15 @@ export function CorrBody({ corr, inReport }: { corr: Correlation; inReport?: boo
                     <td>{p.b}</td>
                     <td>{p.n}</td>
                     {p.r === null ? (
-                      <td colSpan={3} className="corr-na">
+                      <td colSpan={corr.adjust ? 4 : 3} className="corr-na">
                         —<span className="ci">{p.blocker}</span>
                       </td>
                     ) : (
                       <>
-                        <td className={excludesZero(p) ? 'corr-bold' : ''}>{formatNumber(p.r, 2)}</td>
+                        <td className={isClear(p) ? 'corr-bold' : ''}>{formatNumber(p.r, 2)}</td>
                         <td>{p.ci ? formatCI(p.ci, 2) : '—'}</td>
                         <td>{formatP(p.p ?? 1)}</td>
+                        {corr.adjust && <td>{p.pAdjusted === null || p.pAdjusted === undefined ? '—' : formatP(p.pAdjusted)}</td>}
                       </>
                     )}
                   </tr>
@@ -194,7 +197,7 @@ export function CorrelationPage({
   const [navOpen, setNavOpen] = useState(false);
   const options = dataset.questions.filter((q) => isCorrQuestion(q));
   const chosen = selectedVars(dataset, selected).length;
-  const clear = corr ? corr.pairs.filter(excludesZero).length : 0;
+  const clear = corr ? corr.pairs.filter(isClear).length : 0;
   const groups = [
     { key: 'scale', label: '量表题', items: options.filter((q) => !q.derived && q.type === 'scale') },
     { key: 'numeric', label: '数值题', items: options.filter((q) => !q.derived && q.type === 'numeric') },

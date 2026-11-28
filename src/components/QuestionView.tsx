@@ -1,3 +1,4 @@
+import type { ReliabilityExtras } from '../lib/reliabilityExtras.ts';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AIError, SENTIMENT_LABELS } from '../lib/ai.ts';
@@ -178,12 +179,14 @@ interface GroupBodyProps {
   // 有两道以上量表子题时才有；报告里不传切换函数，只展示。
   reliability?: Reliability | null;
   onToggleReversed?: (id: string) => void;
+  // 专业模式的信度扩展：α 区间、KMO、Bartlett、单因子 ω；没启用时为空。
+  extras?: ReliabilityExtras | null;
 }
 
 const plain = (x: number) => String(Number.isInteger(x) ? x : x.toFixed(2));
 const three = (x: number | null) => (x === null ? '—' : x.toFixed(3));
 
-export function GroupBody({ questions, stats, reliability: rel, onToggleReversed }: GroupBodyProps) {
+export function GroupBody({ questions, stats, reliability: rel, onToggleReversed, extras }: GroupBodyProps) {
   const rows = questions.flatMap((q) => (stats[q.id] ? [{ q, stat: stats[q.id] }] : []));
   const means: { name: string; value: number; ci: { lower: number; upper: number } | null }[] = [];
   for (const { q, stat } of rows) {
@@ -200,7 +203,7 @@ export function GroupBody({ questions, stats, reliability: rel, onToggleReversed
         </div>
       )}
       {rows.some(({ stat }) => sampleNote(stat.n)) && <p className="sample-note">部分子项的有效回答不足 30 条，均值和区间较宽。</p>}
-      {rel && <ReliabilityLine rel={rel} anyReversed={anyReversed} />}
+      {rel && <ReliabilityLine rel={rel} anyReversed={anyReversed} extras={extras} />}
       <table className="dist group-table">
         <thead>
           <tr>
@@ -250,9 +253,19 @@ export function GroupBody({ questions, stats, reliability: rel, onToggleReversed
   );
 }
 
-// 题组的信度一行：α、参与份数、翻转范围；算不出来时写原因。
-function ReliabilityLine({ rel, anyReversed }: { rel: Reliability; anyReversed: boolean }) {
+// 题组的信度一行：α、参与份数、翻转范围；算不出来时写原因。专业模式下追加 α 区间、KMO、Bartlett 与 ω。
+function ReliabilityLine({ rel, anyReversed, extras }: { rel: Reliability; anyReversed: boolean; extras?: ReliabilityExtras | null }) {
   const range = rel.range;
+  const pro = extras
+    ? [
+        extras.alphaCI ? `α 的 95% 区间 ${formatCI(extras.alphaCI, 3)}` : '',
+        extras.kmo !== null ? `KMO = ${extras.kmo.toFixed(3)}` : '',
+        extras.bartlett
+          ? `Bartlett χ² = ${formatNumber(extras.bartlett.chi2, 2)}，df = ${extras.bartlett.df}，${extras.bartlett.p < 0.001 ? 'p < 0.001' : `p = ${extras.bartlett.p.toFixed(3)}`}`
+          : '',
+        extras.omega !== null ? `单因子 ω = ${extras.omega.toFixed(3)}（近似）` : '',
+      ].filter(Boolean)
+    : [];
   return (
     <>
       <p className="reliability-line">
@@ -267,6 +280,12 @@ function ReliabilityLine({ rel, anyReversed }: { rel: Reliability; anyReversed: 
         {rel.partial > 0 && `，另有 ${rel.partial} 份未答全`}
         {anyReversed && range && ` · 翻转范围 ${plain(range.min)}–${plain(range.max)}（翻转后 = ${plain(range.min + range.max)} − 原始分）`}
       </p>
+      {pro.length > 0 && <p className="reliability-line">专业口径：{pro.join(' · ')}</p>}
+      {extras?.notes.map((n) => (
+        <p key={n} className="sample-note">
+          {n}
+        </p>
+      ))}
       {rel.alpha !== null && rel.alpha < 0 && <p className="sample-note">α 为负：通常是反向题没有标记，或者这些题不属于同一维度。</p>}
     </>
   );
@@ -296,12 +315,13 @@ interface GroupCardProps {
   onToggleReversed?: (id: string) => void;
   score?: ScoreState;
   onScore?: (groupId: string, missing: ScoreMissing | null) => void;
+  extras?: ReliabilityExtras | null;
   onChangeType: (type: QuestionType) => void;
   onIgnore: () => void;
   onSplit: () => void;
 }
 
-export function GroupCard({ index, group, questions, stats, reliability, onToggleReversed, score, onScore, onChangeType, onIgnore, onSplit }: GroupCardProps) {
+export function GroupCard({ index, group, questions, stats, reliability, onToggleReversed, score, onScore, extras, onChangeType, onIgnore, onSplit }: GroupCardProps) {
   const types = new Set(questions.map((q) => q.type));
   const shared = types.size === 1 ? questions[0].type : '';
   return (
@@ -337,7 +357,7 @@ export function GroupCard({ index, group, questions, stats, reliability, onToggl
         </div>
       </header>
       <p className="card-meta">题组 · {questions.length} 个子项，分别统计</p>
-      <GroupBody questions={questions} stats={stats} reliability={reliability} onToggleReversed={onToggleReversed} />
+      <GroupBody questions={questions} stats={stats} reliability={reliability} onToggleReversed={onToggleReversed} extras={extras} />
       {score && onScore && <ScoreControls score={score} onScore={onScore} />}
     </article>
   );

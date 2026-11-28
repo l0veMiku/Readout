@@ -2148,3 +2148,143 @@ button {
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* 专业模式 */
+.pro-panel {
+  width: 210mm;
+  max-width: 100%;
+  margin-bottom: 12px;
+  padding: 16px 20px;
+}
+
+.pro-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.pro-head .hint {
+  flex: 1;
+  min-width: 200px;
+}
+
+.pro-switch {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.pro-groups {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.pro-group > summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 4px 0;
+}
+
+.pro-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 6px 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 13.5px;
+}
+
+.pro-row .inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pro-row select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.pro-why summary {
+  cursor: pointer;
+  color: var(--green);
+  font-size: 12.5px;
+}
+
+.pro-why p {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.pro-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.score-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13.5px;
+}
+
+.score-form select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 5px 10px;
+}
+
+/* 三线表：去掉竖线与行线，只留顶线、表头线和底线 */
+.apa-table,
+.page.apa table {
+  border-collapse: collapse;
+}
+
+.apa-table th,
+.page.apa th {
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: none;
+}
+
+.apa-table td,
+.page.apa td {
+  border-bottom: 0;
+}
+
+.apa-table th,
+.apa-table td,
+.page.apa th,
+.page.apa td {
+  border-left: 0;
+  border-right: 0;
+}
+
+.apa-table tbody tr:last-child td,
+.page.apa tbody tr:last-child td {
+  border-bottom: 2px solid var(--ink);
+}
+
+.apa-table th,
+.apa-table td {
+  padding: 6px 8px;
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AIResult, Dataset, Question, QuestionType } from '../types.ts';
+import type { AIResult, Dataset, Question, QuestionType, ScoreForm } from '../types.ts';
 import { TYPE_LABELS } from '../types.ts';
 import { computeStat, validRowCount } from '../lib/stats.ts';
 import type { Stat } from '../lib/stats.ts';
@@ -9,6 +9,8 @@ import { scoreNote } from '../lib/scores.ts';
 import type { ScoreState } from '../lib/scores.ts';
 import type { ScoreMissing } from '../types.ts';
 import { includedItems } from '../lib/groups.ts';
+import { SCORE_FORM_LABELS } from '../lib/scores.ts';
+import type { ReliabilityExtras } from '../lib/reliabilityExtras.ts';
 import { FileDrop } from './Home.tsx';
 import { GroupCard, OpenText, QuestionCard } from './QuestionView.tsx';
 import { Modal } from './Modal.tsx';
@@ -36,9 +38,13 @@ interface WorkspaceProps {
   onOpenCleaning: () => void;
   scoreStates: ScoreState[];
   onScore: (groupId: string, missing: ScoreMissing | null) => void;
+  // 专业模式：各题组的信度扩展，以及得分形式的选择。
+  extras: Record<string, ReliabilityExtras | null>;
+  onScoreForm: (groupId: string, form: ScoreForm) => void;
+  scoreFormsEnabled: boolean;
 }
 
-export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, onToggleReversed, rows, cleaning, onOpenCleaning, scoreStates, onScore }: WorkspaceProps) {
+export function Workspace({ dataset, stats, findings, title, onTitle, onChangeType, onToggle, onMergeQuestions, onSplitGroup, onLoad, onDemo, aiResults, hasKey, onOpenSettings, onRun, reliabilities, extras, onToggleReversed, rows, cleaning, onOpenCleaning, scoreStates, onScore, onScoreForm, scoreFormsEnabled }: WorkspaceProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState('');
   const [mergeFrom, setMergeFrom] = useState<Question | null>(null);
@@ -188,6 +194,7 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
                 onSplit={() => onSplitGroup(item.group.id)}
                 score={scoreStates.find((s) => s.group.id === item.group.id)}
                 onScore={onScore}
+                extras={extras[item.group.id] ?? null}
               />
             ) : (
               <QuestionCard
@@ -204,6 +211,18 @@ export function Workspace({ dataset, stats, findings, title, onTitle, onChangeTy
               >
                 {item.question.type === 'open' && (
                   <OpenText question={item.question} stat={stats[item.question.id]} result={aiResults[item.question.id]} hasKey={hasKey} onOpenSettings={onOpenSettings} onRun={onRun} />
+                )}
+                {item.question.derived && scoreFormsEnabled && (
+                  <label className="inline score-form">
+                    得分形式
+                    <select value={dataset.scoreForms?.[item.question.derived.groupId] ?? 'mean'} onChange={(e) => onScoreForm(item.question.derived!.groupId, e.target.value as ScoreForm)}>
+                      {(Object.keys(SCORE_FORM_LABELS) as ScoreForm[]).map((form) => (
+                        <option key={form} value={form}>
+                          {SCORE_FORM_LABELS[form]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 )}
               </QuestionCard>
             ),
